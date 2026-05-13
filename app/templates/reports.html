@@ -1,0 +1,990 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <h4 class="fw-bold mb-0 text-navy"><i class="bi bi-bar-chart-line me-2"></i>Reports & Analytics</h4>
+    <small class="text-muted">Cloud VM cost, usage, and lifecycle insights</small>
+  </div>
+</div>
+
+{# ── Tab Navigation ───────────────────────────────────────────────────────── #}
+<ul class="nav nav-tabs mb-4" id="reportTabs" role="tablist">
+  <li class="nav-item">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-expiring">
+      <i class="bi bi-clock-history me-1"></i>Expiring VMs
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-cost">
+      <i class="bi bi-currency-rupee me-1"></i>Cost by Provider
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-team">
+      <i class="bi bi-people me-1"></i>Usage by Team
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-trends">
+      <i class="bi bi-graph-up me-1"></i>Trends
+    </button>
+  </li>
+  <li class="nav-item">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-top">
+      <i class="bi bi-trophy me-1"></i>Top Expensive VMs
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content" id="reportTabContent">
+
+  {# ── TAB 1: Expiring VMs ─────────────────────────────────────────────────── #}
+  <div class="tab-pane fade show active" id="tab-expiring">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-2" id="expiringDaysGroup">
+            <label class="form-label fw-semibold">Expiring in next</label>
+            <div class="input-group">
+              <input type="number" id="expiringDays" class="form-control" value="30" min="1" max="365">
+              <span class="input-group-text">days</span>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <div class="form-check form-switch mt-4 pt-1">
+              <input class="form-check-input" type="checkbox" id="showOverdue" onchange="onOverdueToggle()">
+              <label class="form-check-label fw-semibold" for="showOverdue">Show Overdue</label>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Cloud Provider</label>
+            <select id="expiringProvider" class="form-select form-select-sm">
+              <option value="">All Providers</option>
+              {% for p in cloud_providers %}
+              <option value="{{ p }}">{{ p }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Team</label>
+            <select id="expiringTeam" class="form-select form-select-sm">
+              <option value="">All Teams</option>
+              {% for t in all_teams %}
+              <option value="{{ t }}">{{ t }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-auto d-flex gap-2">
+            <button class="btn btn-navy" onclick="loadExpiring()">
+              <i class="bi bi-search me-1"></i>Search
+            </button>
+            <button class="btn btn-outline-success" onclick="exportExpiring()">
+              <i class="bi bi-download me-1"></i>CSV
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="expiringContent">
+      <div class="text-center py-5 text-muted">
+        <i class="bi bi-search fs-1 d-block mb-2"></i>
+        Click Search to load results.
+      </div>
+    </div>
+  </div>
+
+
+  {# ── TAB 2: Cost by Provider ─────────────────────────────────────────────── #}
+  <div class="tab-pane fade" id="tab-cost">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Start Date</label>
+            <input type="date" id="costStart" class="form-control">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">End Date</label>
+            <input type="date" id="costEnd" class="form-control">
+          </div>
+          <div class="col-auto d-flex gap-2">
+            <button class="btn btn-navy" onclick="loadCost()">
+              <i class="bi bi-bar-chart me-1"></i>Generate
+            </button>
+            <button class="btn btn-outline-success" onclick="exportCost()">
+              <i class="bi bi-download me-1"></i>CSV
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-4" id="costContent">
+      <div class="col-12 text-center py-5 text-muted">
+        <i class="bi bi-bar-chart fs-1 d-block mb-2"></i>
+        Select a date range and click Generate.
+      </div>
+    </div>
+
+    {# Monthly comparison controls #}
+    <div class="card shadow-sm mt-4">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-bar-chart-steps me-1"></i>Monthly Cost Comparison by Provider
+      </div>
+      <div class="card-body">
+        <div class="row g-3 align-items-end mb-3">
+          <div class="col-auto">
+            <label class="form-label fw-semibold">Month 1</label>
+            <div class="d-flex gap-2">
+              <select id="cmpMonth1" class="form-select form-select-sm" style="max-width:130px">
+                <option value="1">January</option><option value="2">February</option>
+                <option value="3">March</option><option value="4">April</option>
+                <option value="5">May</option><option value="6">June</option>
+                <option value="7">July</option><option value="8">August</option>
+                <option value="9">September</option><option value="10">October</option>
+                <option value="11">November</option><option value="12">December</option>
+              </select>
+              <input type="number" id="cmpYear1" class="form-control form-control-sm" min="2020" max="2035" style="max-width:80px">
+            </div>
+          </div>
+          <div class="col-auto">
+            <label class="form-label fw-semibold">Month 2</label>
+            <div class="d-flex gap-2">
+              <select id="cmpMonth2" class="form-select form-select-sm" style="max-width:130px">
+                <option value="1">January</option><option value="2">February</option>
+                <option value="3">March</option><option value="4">April</option>
+                <option value="5">May</option><option value="6">June</option>
+                <option value="7">July</option><option value="8">August</option>
+                <option value="9">September</option><option value="10">October</option>
+                <option value="11">November</option><option value="12">December</option>
+              </select>
+              <input type="number" id="cmpYear2" class="form-control form-control-sm" min="2020" max="2035" style="max-width:80px">
+            </div>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-navy btn-sm" onclick="loadCostCompare()">
+              <i class="bi bi-arrow-left-right me-1"></i>Compare
+            </button>
+          </div>
+        </div>
+        <div id="costCmpContent">
+          <p class="text-muted small mb-0">Select two months and click Compare.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  {# ── TAB 3: Usage by Team ────────────────────────────────────────────────── #}
+  <div class="tab-pane fade" id="tab-team">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Cloud Provider</label>
+            <select id="teamProvider" class="form-select" multiple>
+              {% for p in cloud_providers %}
+              <option value="{{ p }}">{{ p }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Status</label>
+            <select id="teamStatus" class="form-select">
+              <option value="Active">Active</option>
+              <option value="All">All</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Period</label>
+            <select id="teamPeriod" class="form-select" onchange="updateTeamPeriodControls()">
+              <option value="current">Current Snapshot</option>
+              <option value="range">Date Range</option>
+            </select>
+          </div>
+          <div id="teamDateRange" class="col-md-4" style="display:none">
+            <label class="form-label fw-semibold">From – To</label>
+            <div class="d-flex gap-2 align-items-center">
+              <input type="date" id="teamStart" class="form-control">
+              <span class="text-muted">–</span>
+              <input type="date" id="teamEnd" class="form-control">
+            </div>
+          </div>
+          <div class="col-auto d-flex gap-2">
+            <button class="btn btn-navy" onclick="loadTeam()">
+              <i class="bi bi-people me-1"></i>Generate
+            </button>
+            <button class="btn btn-outline-success" onclick="exportTeam()">
+              <i class="bi bi-download me-1"></i>CSV
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-4" id="teamContent">
+      <div class="col-12 text-center py-5 text-muted">
+        <i class="bi bi-people fs-1 d-block mb-2"></i>
+        Click Generate to load team usage data.
+      </div>
+    </div>
+  </div>
+
+
+  {# ── TAB 4: Trends ───────────────────────────────────────────────────────── #}
+  <div class="tab-pane fade" id="tab-trends">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">View Mode</label>
+            <select id="trendsMode" class="form-select" onchange="updateTrendControls()">
+              <option value="monthly">Rolling Months</option>
+              <option value="specific">Specific Month</option>
+              <option value="custom">Custom Date Range</option>
+            </select>
+          </div>
+
+          <div id="trendMonthsControls" class="col-md-4">
+            <label class="form-label fw-semibold">Period</label>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+              <input type="number" id="trendsMonths" class="form-control" value="12" min="1" max="36" style="max-width:75px">
+              <span class="text-muted">months</span>
+              <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-secondary" onclick="setTrendMonths(6)">6M</button>
+                <button class="btn btn-outline-secondary" onclick="setTrendMonths(12)">12M</button>
+                <button class="btn btn-outline-secondary" onclick="setTrendMonths(24)">24M</button>
+              </div>
+            </div>
+          </div>
+
+          <div id="trendCmpMonthControls" class="col-md-4">
+            <label class="form-label fw-semibold">Comparison "Current" Month</label>
+            <div class="d-flex gap-2">
+              <select id="cmpMonth" class="form-select" onchange="loadTrendsComparison()">
+                <option value="1">January</option><option value="2">February</option>
+                <option value="3">March</option><option value="4">April</option>
+                <option value="5">May</option><option value="6">June</option>
+                <option value="7">July</option><option value="8">August</option>
+                <option value="9">September</option><option value="10">October</option>
+                <option value="11">November</option><option value="12">December</option>
+              </select>
+              <input type="number" id="cmpYear" class="form-control" value="2026"
+                     min="2020" max="2035" style="max-width:85px" onchange="loadTrendsComparison()">
+            </div>
+            <div class="form-text">Previous month is computed automatically</div>
+          </div>
+
+          <div id="trendSpecificControls" class="col-md-5" style="display:none">
+            <label class="form-label fw-semibold">Month &amp; Year</label>
+            <div class="d-flex gap-2">
+              <select id="trendsMonth" class="form-select">
+                <option value="1">January</option><option value="2">February</option>
+                <option value="3">March</option><option value="4">April</option>
+                <option value="5">May</option><option value="6">June</option>
+                <option value="7">July</option><option value="8">August</option>
+                <option value="9">September</option><option value="10">October</option>
+                <option value="11">November</option><option value="12">December</option>
+              </select>
+              <input type="number" id="trendsYear" class="form-control" value="2026" min="2020" max="2035" style="max-width:90px">
+            </div>
+          </div>
+
+          <div id="trendCustomControls" class="col-md-5" style="display:none">
+            <label class="form-label fw-semibold">Date Range</label>
+            <div class="d-flex gap-2">
+              <input type="date" id="trendsCustomStart" class="form-control">
+              <span class="align-self-center text-muted">to</span>
+              <input type="date" id="trendsCustomEnd" class="form-control">
+            </div>
+          </div>
+
+          <div class="col-auto">
+            <button class="btn btn-navy" onclick="loadTrends()">
+              <i class="bi bi-graph-up me-1"></i>Load
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row g-4" id="trendsContent">
+      <div class="col-12 text-center py-5 text-muted">
+        <i class="bi bi-graph-up fs-1 d-block mb-2"></i>
+        Select a period and click Load.
+      </div>
+    </div>
+  </div>
+
+
+  {# ── TAB 5: Top Expensive VMs ────────────────────────────────────────────── #}
+  <div class="tab-pane fade" id="tab-top">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Show Top</label>
+            <div class="input-group">
+              <input type="number" id="topN" class="form-control" value="5" min="1" max="20">
+              <span class="input-group-text">VMs</span>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Status</label>
+            <select id="topStatus" class="form-select">
+              <option value="Active">Active</option>
+              <option value="All">All</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-navy" onclick="loadTopExpensive()">
+              <i class="bi bi-trophy me-1"></i>Load
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row g-4" id="topContent">
+      <div class="col-12 text-center py-5 text-muted">
+        <i class="bi bi-trophy fs-1 d-block mb-2"></i>
+        Click Load to see the most expensive VMs.
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const PROVIDER_COLORS = {
+  'Azure-Billed':      '#0d6efd',
+  'Azure-FreeCredits': '#0dcaf0',
+  'AWS':               '#ffc107',
+  'GCP':               '#dc3545',
+  'E2E':               '#198754',
+  'C4I':               '#6c757d',
+  'Tower':             '#212529',
+};
+
+function providerColor(name) { return PROVIDER_COLORS[name] || '#6c757d'; }
+function spinner() { return '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>'; }
+function fmtDate(s) { return s || '—'; }
+
+// ── TAB 1: Expiring VMs ───────────────────────────────────────────────────────
+function onOverdueToggle() {
+  const overdue = document.getElementById('showOverdue').checked;
+  document.getElementById('expiringDaysGroup').style.display = overdue ? 'none' : '';
+  loadExpiring();
+}
+
+function loadExpiring() {
+  const overdue   = document.getElementById('showOverdue').checked;
+  const days      = document.getElementById('expiringDays').value || 30;
+  const provider  = document.getElementById('expiringProvider').value;
+  const team      = document.getElementById('expiringTeam').value;
+  const el        = document.getElementById('expiringContent');
+  el.innerHTML    = spinner();
+
+  let url = overdue ? '/reports/expiring?overdue=1' : `/reports/expiring?days=${days}`;
+  if (provider) url += `&provider=${encodeURIComponent(provider)}`;
+  if (team)     url += `&team=${encodeURIComponent(team)}`;
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.length) {
+        const msg = overdue
+          ? 'No overdue VMs — all active VMs are within their planned end dates.'
+          : 'No VMs expiring in this window.';
+        el.innerHTML = `<div class="alert alert-success"><i class="bi bi-check-circle me-1"></i>${msg}</div>`;
+        return;
+      }
+      const colHead = overdue ? 'Days Overdue' : 'Days Left';
+      let rows = data.map((v, i) => {
+        const badge = overdue
+          ? `<span class="badge bg-danger">${v.days_overdue} day${v.days_overdue !== 1 ? 's' : ''} overdue</span>`
+          : `<span class="badge ${v.days_left <= 3 ? 'bg-danger' : 'bg-warning text-dark'}">${v.days_left} day${v.days_left !== 1 ? 's' : ''}</span>`;
+        return `<tr>
+          <td>${i+1}</td>
+          <td><span class="badge" style="background:${providerColor(v.cloud_provider)}">${v.cloud_provider}</span></td>
+          <td class="fw-semibold">${v.vm_name}</td>
+          <td>${v.team_name}</td>
+          <td>${v.requested_by || '—'}</td>
+          <td>${fmtDate(v.planned_end_date)}</td>
+          <td>${badge}</td>
+          <td>₹${v.daily_cost.toFixed(2)}</td>
+        </tr>`;
+      }).join('');
+
+      el.innerHTML = `
+        <div class="card shadow-sm">
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-hover mb-0">
+                <thead class="table-navy">
+                  <tr><th>#</th><th>Provider</th><th>VM Name</th><th>Team</th><th>Requested By</th><th>End Date</th><th>${colHead}</th><th>Daily Cost</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>`;
+    })
+    .catch(() => { el.innerHTML = '<div class="alert alert-danger">Failed to load data.</div>'; });
+}
+
+function exportExpiring() {
+  const overdue  = document.getElementById('showOverdue').checked;
+  const days     = document.getElementById('expiringDays').value || 30;
+  window.location = overdue ? '/reports/export/expiring?overdue=1' : `/reports/export/expiring?days=${days}`;
+}
+
+// ── TAB 2: Cost by Provider ───────────────────────────────────────────────────
+let costChart    = null;
+let cmpBarChart  = null;
+let cmpPctChart  = null;
+
+function loadCost() {
+  const start = document.getElementById('costStart').value;
+  const end   = document.getElementById('costEnd').value;
+  const el    = document.getElementById('costContent');
+  el.innerHTML = spinner();
+
+  let url = '/reports/cost-by-provider';
+  if (start) url += `?start=${start}`;
+  if (end)   url += `${start ? '&' : '?'}end=${end}`;
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.length) {
+        el.innerHTML = '<div class="col-12"><div class="alert alert-info">No active VMs found.</div></div>';
+        return;
+      }
+      const labels = data.map(d => d.provider);
+      const costs  = data.map(d => d.total_cost);
+      const colors = data.map(d => providerColor(d.provider));
+      const grand  = costs.reduce((a, b) => a + b, 0);
+
+      let rows = data.map((d, i) => `
+        <tr>
+          <td>${i+1}</td>
+          <td><span class="badge" style="background:${providerColor(d.provider)}">${d.provider}</span></td>
+          <td>${d.vm_count}</td>
+          <td>₹${d.daily_cost.toFixed(2)}</td>
+          <td class="fw-bold">₹${d.total_cost.toFixed(2)}</td>
+          <td><span class="badge bg-secondary">${d.pct}%</span></td>
+        </tr>`).join('');
+
+      el.innerHTML = `
+        <div class="col-md-5">
+          <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold">Cost Distribution</div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+              <canvas id="costChart" style="max-height:300px"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-7">
+          <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold">Summary Table</div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                  <thead class="table-navy">
+                    <tr><th>#</th><th>Provider</th><th>VM Count</th><th>Daily Cost</th><th>Total Cost</th><th>% of Total</th></tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      if (costChart) costChart.destroy();
+      costChart = new Chart(document.getElementById('costChart'), {
+        type: 'doughnut',
+        data: { labels, datasets: [{ data: costs, backgroundColor: colors, borderWidth: 2 }] },
+        options: {
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.toFixed(2)}` } }
+          }
+        }
+      });
+    })
+    .catch(() => { el.innerHTML = '<div class="col-12"><div class="alert alert-danger">Failed to load data.</div></div>'; });
+}
+
+function exportCost() {
+  const start = document.getElementById('costStart').value;
+  const end   = document.getElementById('costEnd').value;
+  let url = '/reports/export/cost-by-provider';
+  const p = [];
+  if (start) p.push(`start=${start}`);
+  if (end)   p.push(`end=${end}`);
+  if (p.length) url += '?' + p.join('&');
+  window.location = url;
+}
+
+function loadCostCompare() {
+  const m1 = document.getElementById('cmpMonth1').value;
+  const y1 = document.getElementById('cmpYear1').value;
+  const m2 = document.getElementById('cmpMonth2').value;
+  const y2 = document.getElementById('cmpYear2').value;
+  const el = document.getElementById('costCmpContent');
+  el.innerHTML = spinner();
+
+  fetch(`/reports/cost-compare?month1=${m1}&year1=${y1}&month2=${m2}&year2=${y2}`)
+    .then(r => r.json())
+    .then(d => {
+      if (!d.rows || !d.rows.length) {
+        el.innerHTML = '<div class="alert alert-info">No data found for these months.</div>';
+        return;
+      }
+      const providers = d.rows.map(r => r.provider);
+      const prevVals  = d.rows.map(r => r.prev);
+      const curVals   = d.rows.map(r => r.cur);
+      const pctVals   = d.rows.map(r => r.pct_change);
+      const pctColors = pctVals.map(v => v === null ? '#adb5bd' : (v >= 0 ? 'rgba(25,135,84,0.8)' : 'rgba(220,53,69,0.8)'));
+
+      el.innerHTML = `
+        <div class="row g-4 mt-0">
+          <div class="col-md-7">
+            <canvas id="cmpBarChart"></canvas>
+          </div>
+          <div class="col-md-5">
+            <canvas id="cmpPctChart"></canvas>
+          </div>
+        </div>`;
+
+      if (cmpBarChart) { cmpBarChart.destroy(); cmpBarChart = null; }
+      if (cmpPctChart) { cmpPctChart.destroy(); cmpPctChart = null; }
+
+      cmpBarChart = new Chart(document.getElementById('cmpBarChart'), {
+        type: 'bar',
+        data: {
+          labels: providers,
+          datasets: [
+            { label: `${d.m1_label} (INR)`, data: prevVals, backgroundColor: 'rgba(100,149,237,0.75)', borderRadius: 4 },
+            { label: `${d.m2_label} (INR)`, data: curVals,  backgroundColor: 'rgba(255,105,135,0.75)', borderRadius: 4 },
+          ]
+        },
+        options: {
+          plugins: {
+            title: { display: true, text: 'Monthly Cost Comparison', font: { size: 14, weight: 'bold' } },
+            legend: { position: 'top' },
+            tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.y.toLocaleString()}` } }
+          },
+          scales: { y: { beginAtZero: true, ticks: { callback: v => '₹' + v.toLocaleString() } } }
+        }
+      });
+
+      cmpPctChart = new Chart(document.getElementById('cmpPctChart'), {
+        type: 'bar',
+        data: {
+          labels: providers,
+          datasets: [{
+            label: '% Change',
+            data: pctVals.map(v => v === null ? 0 : v),
+            backgroundColor: pctColors,
+            borderRadius: 4,
+          }]
+        },
+        options: {
+          plugins: {
+            title: { display: true, text: 'Percentage Change by Cloud', font: { size: 14, weight: 'bold' } },
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y !== null ? ctx.parsed.y + '%' : 'N/A (no prev data)'}` } }
+          },
+          scales: { y: { ticks: { callback: v => v + '%' } } }
+        }
+      });
+    })
+    .catch(() => { el.innerHTML = '<div class="alert alert-danger">Failed to load comparison.</div>'; });
+}
+
+// ── TAB 3: Usage by Team ──────────────────────────────────────────────────────
+let teamChart = null;
+
+function updateTeamPeriodControls() {
+  const period = document.getElementById('teamPeriod').value;
+  document.getElementById('teamDateRange').style.display = period === 'range' ? '' : 'none';
+}
+
+function loadTeam() {
+  const sel       = document.getElementById('teamProvider');
+  const providers = Array.from(sel.selectedOptions).map(o => o.value);
+  const status    = document.getElementById('teamStatus').value;
+  const period    = document.getElementById('teamPeriod').value;
+  const el        = document.getElementById('teamContent');
+  el.innerHTML    = spinner();
+
+  let url = '/reports/usage-by-team?status=' + status;
+  providers.forEach(p => url += `&provider=${encodeURIComponent(p)}`);
+  if (period === 'range') {
+    const start = document.getElementById('teamStart').value;
+    const end   = document.getElementById('teamEnd').value;
+    if (start) url += '&start=' + start;
+    if (end)   url += '&end='   + end;
+  }
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.length) {
+        el.innerHTML = '<div class="col-12"><div class="alert alert-info">No data found.</div></div>';
+        return;
+      }
+      const labels = data.map(d => d.team);
+      const costs  = data.map(d => d.total_daily_cost);
+      const colors = labels.map((_, i) => `hsl(${(i * 47) % 360}, 60%, 55%)`);
+      const grand  = costs.reduce((a, b) => a + b, 0);
+
+      let rows = data.map((d, i) => `
+        <tr>
+          <td>${i+1}</td>
+          <td class="fw-semibold">${d.team}</td>
+          <td>${d.vm_count}</td>
+          <td>₹${d.total_daily_cost.toFixed(2)}</td>
+          <td>₹${d.avg_daily_cost.toFixed(2)}</td>
+          <td><span class="badge bg-secondary">${d.pct}%</span></td>
+        </tr>`).join('');
+
+      el.innerHTML = `
+        <div class="col-md-5">
+          <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold">Daily Cost by Team</div>
+            <div class="card-body">
+              <canvas id="teamChart"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-7">
+          <div class="card shadow-sm h-100">
+            <div class="card-header fw-semibold">Team Summary</div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                  <thead class="table-navy">
+                    <tr><th>#</th><th>Team</th><th>VM Count</th><th>Total Daily Cost</th><th>Avg Daily Cost</th><th>% of Total</th></tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      if (teamChart) teamChart.destroy();
+      teamChart = new Chart(document.getElementById('teamChart'), {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Daily Cost (INR)', data: costs, backgroundColor: colors, borderRadius: 4 }] },
+        options: {
+          indexAxis: 'y',
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.x.toFixed(2)}/day` } }
+          },
+          scales: { x: { ticks: { callback: v => '₹' + v } } }
+        }
+      });
+    })
+    .catch(() => { el.innerHTML = '<div class="col-12"><div class="alert alert-danger">Failed to load data.</div></div>'; });
+}
+
+function exportTeam() {
+  const sel       = document.getElementById('teamProvider');
+  const providers = Array.from(sel.selectedOptions).map(o => o.value);
+  const status    = document.getElementById('teamStatus').value;
+  const period    = document.getElementById('teamPeriod').value;
+  let url = '/reports/export/usage-by-team?status=' + status;
+  providers.forEach(p => url += `&provider=${encodeURIComponent(p)}`);
+  if (period === 'range') {
+    const start = document.getElementById('teamStart').value;
+    const end   = document.getElementById('teamEnd').value;
+    if (start) url += '&start=' + start;
+    if (end)   url += '&end='   + end;
+  }
+  window.location = url;
+}
+
+// ── TAB 4: Trends ─────────────────────────────────────────────────────────────
+let trendCountChart    = null;
+let trendCostChart     = null;
+let trendCmpCountChart = null;
+let trendCmpCostChart  = null;
+
+function updateTrendControls() {
+  const mode = document.getElementById('trendsMode').value;
+  document.getElementById('trendMonthsControls').style.display   = mode === 'monthly'  ? '' : 'none';
+  document.getElementById('trendCmpMonthControls').style.display = mode === 'monthly'  ? '' : 'none';
+  document.getElementById('trendSpecificControls').style.display = mode === 'specific' ? '' : 'none';
+  document.getElementById('trendCustomControls').style.display   = mode === 'custom'   ? '' : 'none';
+}
+
+function setTrendMonths(n) {
+  document.getElementById('trendsMonths').value = n;
+  loadTrends();
+}
+
+function loadTrends() {
+  const mode = document.getElementById('trendsMode').value;
+  let url = '/reports/trends?mode=' + mode;
+  if (mode === 'monthly') {
+    url += '&months=' + (document.getElementById('trendsMonths').value || 12);
+  } else if (mode === 'specific') {
+    url += '&year='  + document.getElementById('trendsYear').value;
+    url += '&month=' + document.getElementById('trendsMonth').value;
+  } else if (mode === 'custom') {
+    const s = document.getElementById('trendsCustomStart').value;
+    const e = document.getElementById('trendsCustomEnd').value;
+    if (!s || !e) { alert('Please select both a start and end date.'); return; }
+    url += '&start=' + s + '&end=' + e;
+  }
+
+  const el = document.getElementById('trendsContent');
+  el.innerHTML = spinner();
+
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      const months     = document.getElementById('trendsMonths').value;
+      const countTitle = mode === 'specific' ? 'Daily VM Count'
+                       : mode === 'custom'   ? 'VM Count (Custom Range)'
+                       : `VM Count — Last ${months} Months`;
+      const costTitle  = data.cost_label || 'Estimated Cost (INR)';
+
+      const cmpSection = (mode === 'monthly' && data.labels.length >= 2) ? `
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-header fw-semibold">Month-over-Month Comparison</div>
+            <div class="card-body">
+              <div class="row g-4">
+                <div class="col-md-6"><canvas id="trendCmpCountChart"></canvas></div>
+                <div class="col-md-6"><canvas id="trendCmpCostChart"></canvas></div>
+              </div>
+            </div>
+          </div>
+        </div>` : '';
+
+      el.innerHTML = `
+        <div class="col-md-6">
+          <div class="card shadow-sm">
+            <div class="card-header fw-semibold">${countTitle}</div>
+            <div class="card-body"><canvas id="trendCountChart"></canvas></div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card shadow-sm">
+            <div class="card-header fw-semibold">${costTitle}</div>
+            <div class="card-body"><canvas id="trendCostChart"></canvas></div>
+          </div>
+        </div>${cmpSection}`;
+
+      if (trendCountChart)    trendCountChart.destroy();
+      if (trendCostChart)     trendCostChart.destroy();
+      if (trendCmpCountChart) { trendCmpCountChart.destroy(); trendCmpCountChart = null; }
+      if (trendCmpCostChart)  { trendCmpCostChart.destroy();  trendCmpCostChart  = null; }
+
+      trendCountChart = new Chart(document.getElementById('trendCountChart'), {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: [{ label: 'Active VMs', data: data.vm_counts, borderColor: '#1F3864', backgroundColor: 'rgba(31,56,100,0.1)', fill: true, tension: 0.3, pointRadius: 4 }]
+        },
+        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+      });
+
+      trendCostChart = new Chart(document.getElementById('trendCostChart'), {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: [{ label: 'Cost (INR)', data: data.cost_totals, borderColor: '#2E75B6', backgroundColor: 'rgba(46,117,182,0.1)', fill: true, tension: 0.3, pointRadius: 4 }]
+        },
+        options: {
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { callback: v => '₹' + v.toLocaleString() } } }
+        }
+      });
+
+      if (mode === 'monthly') loadTrendsComparison();
+    })
+    .catch(() => { el.innerHTML = '<div class="col-12"><div class="alert alert-danger">Failed to load trends.</div></div>'; });
+}
+
+function loadTrendsComparison() {
+  const cmpYear  = document.getElementById('cmpYear').value;
+  const cmpMonth = document.getElementById('cmpMonth').value;
+  const cmpCount = document.getElementById('trendCmpCountChart');
+  const cmpCost  = document.getElementById('trendCmpCostChart');
+  if (!cmpCount || !cmpCost) return;
+
+  fetch(`/reports/trends/compare?year=${cmpYear}&month=${cmpMonth}`)
+    .then(r => r.json())
+    .then(cmp => {
+      if (trendCmpCountChart) { trendCmpCountChart.destroy(); trendCmpCountChart = null; }
+      if (trendCmpCostChart)  { trendCmpCostChart.destroy();  trendCmpCostChart  = null; }
+
+      trendCmpCountChart = new Chart(cmpCount, {
+        type: 'bar',
+        data: {
+          labels: [cmp.prev.label, cmp.cur.label],
+          datasets: [{ label: 'VM Count', data: [cmp.prev.count, cmp.cur.count], backgroundColor: ['rgba(31,56,100,0.4)', 'rgba(31,56,100,1)'], borderRadius: 6 }]
+        },
+        options: {
+          plugins: {
+            legend: { display: false },
+            title: { display: true, text: 'VM Count: Previous vs Current Month', font: { size: 13 } }
+          },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+        }
+      });
+
+      trendCmpCostChart = new Chart(cmpCost, {
+        type: 'bar',
+        data: {
+          labels: [cmp.prev.label, cmp.cur.label],
+          datasets: [{ label: 'Cost (INR)', data: [cmp.prev.cost, cmp.cur.cost], backgroundColor: ['rgba(46,117,182,0.4)', 'rgba(46,117,182,1)'], borderRadius: 6 }]
+        },
+        options: {
+          plugins: {
+            legend: { display: false },
+            title: { display: true, text: 'Cost: Previous vs Current Month', font: { size: 13 } }
+          },
+          scales: { y: { beginAtZero: true, ticks: { callback: v => '₹' + v.toLocaleString() } } }
+        }
+      });
+    })
+    .catch(() => {
+      const sec = document.querySelector('#trendsContent .col-12:last-child .card-body');
+      if (sec) sec.innerHTML = '<div class="alert alert-danger mb-0">Failed to load comparison.</div>';
+    });
+}
+
+// ── TAB 5: Top Expensive VMs ──────────────────────────────────────────────────
+let topChart = null;
+
+function loadTopExpensive() {
+  const n      = document.getElementById('topN').value || 5;
+  const status = document.getElementById('topStatus').value;
+  const el     = document.getElementById('topContent');
+  el.innerHTML = spinner();
+
+  fetch(`/reports/top-expensive?n=${n}&status=${status}`)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.length) {
+        el.innerHTML = '<div class="col-12"><div class="alert alert-info">No VMs found.</div></div>';
+        return;
+      }
+      const labels = data.map(d => d.vm_name);
+      const costs  = data.map(d => d.daily_cost);
+      const colors = data.map((_, i) => `hsl(${220 + i * 18}, 70%, ${58 - i * 4}%)`);
+
+      let rows = data.map((d, i) => `
+        <tr>
+          <td class="fw-bold">${i+1}</td>
+          <td class="fw-semibold">${d.vm_name}</td>
+          <td><span class="badge" style="background:${providerColor(d.cloud_provider)}">${d.cloud_provider}</span></td>
+          <td>${d.team_name}</td>
+          <td class="fw-bold text-danger">₹${d.daily_cost.toFixed(2)}</td>
+          <td class="fw-semibold">₹${d.monthly_est.toFixed(2)}</td>
+          <td class="small text-muted">${fmtDate(d.planned_end_date)}</td>
+          <td>${(d.tags||[]).map(t => `<span class="badge tag-${t}">${t}</span>`).join(' ')}</td>
+        </tr>`).join('');
+
+      el.innerHTML = `
+        <div class="col-md-5">
+          <div class="card shadow-sm">
+            <div class="card-header fw-semibold">Daily Cost Ranking</div>
+            <div class="card-body"><canvas id="topChart"></canvas></div>
+          </div>
+        </div>
+        <div class="col-md-7">
+          <div class="card shadow-sm">
+            <div class="card-header fw-semibold">VM Details</div>
+            <div class="card-body p-0">
+              <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                  <thead class="table-navy">
+                    <tr><th>#</th><th>VM Name</th><th>Provider</th><th>Team</th><th>Daily Cost</th><th>Monthly Est.</th><th>End Date</th><th>Tags</th></tr>
+                  </thead>
+                  <tbody>${rows}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>`;
+
+      if (topChart) topChart.destroy();
+      topChart = new Chart(document.getElementById('topChart'), {
+        type: 'bar',
+        data: { labels, datasets: [{ label: 'Daily Cost (INR)', data: costs, backgroundColor: colors, borderRadius: 4 }] },
+        options: {
+          indexAxis: 'y',
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.x.toFixed(2)}/day` } }
+          },
+          scales: { x: { ticks: { callback: v => '₹' + v } } }
+        }
+      });
+    })
+    .catch(() => { el.innerHTML = '<div class="col-12"><div class="alert alert-danger">Failed to load data.</div></div>'; });
+}
+
+// ── Initialisation ────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const now = new Date();
+  const y   = now.getFullYear();
+  const m   = String(now.getMonth() + 1).padStart(2, '0');
+  const d   = String(now.getDate()).padStart(2, '0');
+  const pm  = now.getMonth() === 0 ? 12 : now.getMonth();
+  const py  = now.getMonth() === 0 ? y - 1 : y;
+
+  document.getElementById('costStart').value         = `${y}-${m}-01`;
+  document.getElementById('costEnd').value           = `${y}-${m}-${d}`;
+  document.getElementById('trendsYear').value        = y;
+  document.getElementById('trendsMonth').value       = now.getMonth() + 1;
+  document.getElementById('trendsCustomStart').value = `${y}-01-01`;
+  document.getElementById('trendsCustomEnd').value   = `${y}-${m}-${d}`;
+  document.getElementById('teamStart').value         = `${y}-01-01`;
+  document.getElementById('teamEnd').value           = `${y}-${m}-${d}`;
+  document.getElementById('cmpYear').value           = y;
+  document.getElementById('cmpMonth').value          = now.getMonth() + 1;
+  document.getElementById('cmpYear1').value          = py;
+  document.getElementById('cmpMonth1').value         = pm;
+  document.getElementById('cmpYear2').value          = y;
+  document.getElementById('cmpMonth2').value         = now.getMonth() + 1;
+
+  // Deep-link from dashboard stat cards
+  const urlP  = new URLSearchParams(window.location.search);
+  const inTab = urlP.get('tab');
+  if (inTab === 'expiring') {
+    const days    = urlP.get('days');
+    const overdue = urlP.get('overdue');
+    if (days) document.getElementById('expiringDays').value = days;
+    if (overdue === '1') {
+      document.getElementById('showOverdue').checked = true;
+      document.getElementById('expiringDaysGroup').style.display = 'none';
+    }
+  }
+
+  loadExpiring();
+
+  document.querySelector('[data-bs-target="#tab-trends"]').addEventListener('shown.bs.tab', loadTrends);
+  document.querySelector('[data-bs-target="#tab-cost"]').addEventListener('shown.bs.tab', loadCost);
+  document.querySelector('[data-bs-target="#tab-team"]').addEventListener('shown.bs.tab', loadTeam);
+  document.querySelector('[data-bs-target="#tab-top"]').addEventListener('shown.bs.tab', loadTopExpensive);
+});
+</script>
+{% endblock %}
