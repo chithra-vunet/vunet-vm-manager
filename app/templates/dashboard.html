@@ -260,7 +260,11 @@
               </td>
               <td data-col="col-deleted" class="small text-muted">{{ vm.deleted_date or '—' }}</td>
               <td data-col="col-daily" class="fw-semibold">₹{{ "%.2f"|format(vm.daily_cost) }}</td>
-              <td data-col="col-total" class="fw-semibold {% if vm.status == 'Inactive' %}text-secondary{% else %}text-navy{% endif %}">
+              <td data-col="col-total" class="fw-semibold {% if vm.status == 'Inactive' %}text-secondary{% else %}text-navy{% endif %}"
+                  {% if vm.start_date and vm.cost_end_date %}
+                  title="{{ vm.start_date }} → {{ vm.cost_end_date }}"
+                  data-bs-toggle="tooltip"
+                  {% endif %}>
                 ₹{{ "%.2f"|format(vm.total_cost) }}
                 <div class="text-muted" style="font-size:0.7rem;font-weight:400">
                   {{ vm.total_cost_days }}d
@@ -275,7 +279,10 @@
                   </button>
                   {% if vm.status == 'Active' %}
                   <button class="btn btn-outline-warning" title="Deactivate"
-                          onclick="openDeactivateModal('{{ vm._id }}', '{{ vm.vm_name }}')">
+                          data-vm-id="{{ vm._id }}"
+                          data-vm-name="{{ vm.vm_name }}"
+                          data-planned-end="{{ vm.planned_end_date }}"
+                          onclick="openDeactivateModal(this)">
                     <i class="bi bi-pause-circle"></i>
                   </button>
                   {% endif %}
@@ -368,16 +375,29 @@
             </div>
           </div>
 
-          <div class="mb-2">
+          <div class="mb-3">
             <label class="form-label fw-semibold">CSV File</label>
             <input type="file" name="csv_file" class="form-control" accept=".csv" required>
           </div>
 
+          <div class="mb-3">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="update_existing" value="1" id="updateExistingToggle">
+              <label class="form-check-label fw-semibold" for="updateExistingToggle">
+                Update existing VMs with new data
+              </label>
+            </div>
+            <div class="form-text mt-1">
+              <strong>OFF (default):</strong> Re-importing the same sheet only adds the <em>new rows</em> — existing VMs are untouched.<br>
+              <strong>ON:</strong> Matching VMs (same Name + Provider + IP) are overwritten with values from the CSV.
+            </div>
+          </div>
+
           <div class="alert alert-light border py-2 px-3 mb-0 small text-muted">
             <i class="bi bi-info-circle me-1"></i>
-            Status "Stopped" / "Deleted" → <strong>Inactive</strong>.
+            Duplicates are detected by <strong>VM Name + Cloud Provider + IP Address</strong>.
+            Status "Stopped" / "Deleted" → Inactive.
             Planned end date is auto-extracted from VM names like <em>foo-to-30-05-2026</em>.
-            Names containing "long-term" are treated as having no end date.
           </div>
         </div>
         <div class="modal-footer">
@@ -451,7 +471,11 @@
         </div>
         <div class="modal-body">
           <p>Are you sure you want to mark <strong id="deactivateName"></strong> as <span class="badge bg-secondary">Inactive</span>?</p>
-          <p class="text-muted small mb-0">The VM record will be retained. You can edit it to restore active status.</p>
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Deactivation Date</label>
+            <input type="date" name="deleted_date" id="deactivateDate" class="form-control form-control-sm">
+            <div class="form-text">Pre-filled from planned end date if past. Adjust if the VM was stopped on a different day.</div>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -705,9 +729,16 @@ function toggleDeletedDate(sel) {
 }
 
 // ── Deactivate Modal ──────────────────────────────────────────────────────────
-function openDeactivateModal(vmId, vmName) {
+function openDeactivateModal(btn) {
+  const vmId       = btn.dataset.vmId;
+  const vmName     = btn.dataset.vmName;
+  const plannedEnd = btn.dataset.plannedEnd;
   document.getElementById('deactivateForm').action = `/vms/${vmId}/deactivate`;
   document.getElementById('deactivateName').textContent = vmName;
+  const today = new Date().toISOString().split('T')[0];
+  // pre-fill with planned_end_date when it's in the past, otherwise today
+  const pre = plannedEnd && plannedEnd < today ? plannedEnd : today;
+  document.getElementById('deactivateDate').value = pre;
   new bootstrap.Modal(document.getElementById('deactivateModal')).show();
 }
 

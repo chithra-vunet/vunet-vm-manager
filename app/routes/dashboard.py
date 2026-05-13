@@ -268,7 +268,8 @@ def edit_vm(vm_id):
 @dashboard_bp.route("/vms/<vm_id>/deactivate", methods=["POST"])
 @login_required
 def deactivate(vm_id):
-    deactivate_vm(vm_id)
+    deleted_on = request.form.get("deleted_date", "").strip()
+    deactivate_vm(vm_id, deleted_on or None)
     flash("VM marked as Inactive.", "warning")
     return redirect(_back())
 
@@ -290,6 +291,18 @@ def vm_json(vm_id):
     return jsonify({"error": "Not found"}), 404
 
 
+def _vm_fingerprint(data):
+    """
+    Unique key for a VM: (name, cloud_provider, ip_address) — all lowercased.
+    Used to detect duplicates during import without relying on a DB unique index.
+    """
+    return (
+        (data.get("vm_name")        or "").strip().lower(),
+        (data.get("cloud_provider") or "").strip().lower(),
+        (data.get("ip_address")     or "").strip().lower(),
+    )
+
+
 @dashboard_bp.route("/vms/import", methods=["POST"])
 @login_required
 def import_vms():
@@ -299,14 +312,25 @@ def import_vms():
         return redirect(_back())
 
     default_provider = request.form.get("cloud_provider", "").strip()
+    update_existing  = request.form.get("update_existing") == "1"
 
     try:
-        text    = file.read().decode("utf-8-sig")
-        rows    = _detect_and_parse(text)
-        added   = 0
-        skipped = 0
-        no_prov = 0
-        errors  = []
+        text = file.read().decode("utf-8-sig")
+        rows = _detect_and_parse(text)
+
+        # Build a fingerprint → _id map of every VM already in the DB (one query)
+        import app as _app
+        existing = {}
+        for doc in _app.db.vms.find({}, {"vm_name": 1, "cloud_provider": 1, "ip_address": 1}):
+            fp = _vm_fingerprint(doc)
+            existing[fp] = str(doc["_id"])
+
+        added      = 0
+        updated    = 0
+        duplicates = 0
+        skipped    = 0
+        no_prov    = 0
+        errors     = []
 
         for i, row in enumerate(rows, 1):
             try:
@@ -317,21 +341,42 @@ def import_vms():
                 if not data.get("cloud_provider"):
                     no_prov += 1
                     continue
-                create_vm(data)
-                added += 1
+
+                fp = _vm_fingerprint(data)
+                if fp in existing:
+                    if update_existing:
+                        update_vm(existing[fp], data)
+                        updated += 1
+                    else:
+                        duplicates += 1
+                else:
+                    new_id = create_vm(data)
+                    existing[fp] = new_id   # prevent intra-batch duplicates too
+                    added += 1
+
             except Exception as exc:
                 name_val = next((v for k, v in row.items()
                                  if "name" in _norm_key(k) and v), "?")
                 errors.append(f"Row {i} ({name_val}): {exc}")
 
+        parts = []
         if added:
-            flash(f"Imported {added} VM(s). {skipped} blank row(s) skipped.", "success")
+            parts.append(f"{added} new VM(s) added")
+        if updated:
+            parts.append(f"{updated} existing VM(s) updated")
+        if duplicates:
+            parts.append(f"{duplicates} duplicate(s) skipped")
+        if skipped:
+            parts.append(f"{skipped} blank row(s) ignored")
+
+        if parts:
+            flash(" · ".join(parts) + ".", "success" if added or updated else "info")
         if no_prov:
             flash(f"{no_prov} row(s) skipped — no Cloud Provider found in CSV. "
                   "Select one in the import form.", "warning")
         if errors:
             flash(f"{len(errors)} row(s) had errors: " + "; ".join(errors[:5]), "warning")
-        if not added and not errors and not no_prov:
+        if not added and not updated and not errors and not no_prov and not duplicates:
             flash("No VMs imported. Make sure the file has columns for Name / IP / Status / "
                   "Cost / Owner / Team.", "warning")
 

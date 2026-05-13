@@ -164,10 +164,10 @@ def cost_compare():
     return jsonify({"m1_label": m1_label, "m2_label": m2_label, "rows": rows})
 
 
-@reports_bp.route("/usage-by-team")
-@login_required
-def usage_by_team():
+def _team_match(request):
+    """Build the shared $match dict for usage-by-team queries."""
     providers     = request.args.getlist("provider")
+    teams         = request.args.getlist("team") or ([request.args.get("team")] if request.args.get("team") else [])
     status_filter = request.args.get("status", "Active")
     start_s       = request.args.get("start")
     end_s         = request.args.get("end")
@@ -183,6 +183,15 @@ def usage_by_team():
             match["status"] = status_filter
     if providers:
         match["cloud_provider"] = {"$in": providers}
+    if teams:
+        match["team_name"] = {"$in": teams}
+    return match
+
+
+@reports_bp.route("/usage-by-team")
+@login_required
+def usage_by_team():
+    match = _team_match(request)
 
     pipeline = [
         {"$match": match},
@@ -413,21 +422,7 @@ def export_cost_by_provider():
 @reports_bp.route("/export/usage-by-team")
 @login_required
 def export_usage_by_team():
-    providers     = request.args.getlist("provider")
-    status_filter = request.args.get("status", "Active")
-    start_s       = request.args.get("start")
-    end_s         = request.args.get("end")
-    match = {}
-    if start_s or end_s:
-        start = datetime.strptime(start_s, "%Y-%m-%d") if start_s else datetime(2000, 1, 1)
-        end   = (datetime.strptime(end_s, "%Y-%m-%d") + timedelta(days=1)) if end_s else _today() + timedelta(days=1)
-        match["start_date"] = {"$lt": end}
-        match["$or"] = [{"deleted_date": None}, {"deleted_date": {"$gte": start}}]
-    else:
-        if status_filter != "All":
-            match["status"] = status_filter
-    if providers:
-        match["cloud_provider"] = {"$in": providers}
+    match    = _team_match(request)
     pipeline = [
         {"$match": match},
         {"$group": {"_id": "$team_name", "vm_count": {"$sum": 1}, "total_daily_cost": {"$sum": "$daily_cost"}}},
@@ -435,8 +430,13 @@ def export_usage_by_team():
     ]
     raw         = list(_db().vms.aggregate(pipeline))
     grand_total = sum(float(r["total_daily_cost"]) for r in raw)
+
+    # Include which provider(s) were filtered, so the CSV is self-explanatory
+    provider_note = ", ".join(request.args.getlist("provider")) or "All"
+
     buf = io.StringIO()
     w   = csv.writer(buf)
+    w.writerow([f"# Cloud Provider filter: {provider_note}"])
     w.writerow(["Team", "VM Count", "Total Daily Cost (INR)", "Avg Daily Cost (INR)", "% Contribution"])
     for r in raw:
         cnt   = r["vm_count"]
@@ -446,3 +446,49 @@ def export_usage_by_team():
     buf.seek(0)
     return Response(buf.getvalue(), mimetype="text/csv",
                     headers={"Content-Disposition": f"attachment; filename=usage_by_team_{date.today().isoformat()}.csv"})
+
+
+@reports_bp.route("/export/cloud-team-consolidated")
+@login_required
+def export_cloud_team_consolidated():
+    """
+    Export Cloud Provider × Team cost breakdown in one flat CSV.
+    Matches the 'Cloud + Project Team + Cost' layout used in monthly tracker sheets.
+    """
+    match    = _team_match(request)
+    pipeline = [
+        {"$match": match},
+        {"$group": {
+            "_id":              {"cloud": "$cloud_provider", "team": "$team_name"},
+            "vm_count":         {"$sum": 1},
+            "total_daily_cost": {"$sum": "$daily_cost"},
+        }},
+        {"$sort": {"_id.cloud": 1, "total_daily_cost": -1}},
+    ]
+    raw         = list(_db().vms.aggregate(pipeline))
+    grand_total = sum(float(r["total_daily_cost"]) for r in raw)
+
+    buf = io.StringIO()
+    w   = csv.writer(buf)
+    w.writerow(["Cloud", "Team", "VM Count", "Cost (INR)", "% of Total"])
+    for r in raw:
+        total = float(r["total_daily_cost"])
+        pct   = f"{round(total / grand_total * 100, 1)}%" if grand_total else "0%"
+        w.writerow([r["_id"]["cloud"], r["_id"]["team"], r["vm_count"], round(total, 2), pct])
+
+    # Summary rows at the bottom
+    w.writerow([])
+    w.writerow(["--- Summary by Cloud ---"])
+    w.writerow(["Cloud", "Total Cost (INR)", "% of Total"])
+    cloud_totals = {}
+    for r in raw:
+        c = r["_id"]["cloud"]
+        cloud_totals[c] = cloud_totals.get(c, 0) + float(r["total_daily_cost"])
+    for cloud, total in sorted(cloud_totals.items(), key=lambda x: -x[1]):
+        pct = f"{round(total / grand_total * 100, 1)}%" if grand_total else "0%"
+        w.writerow([cloud, round(total, 2), pct])
+    w.writerow(["Grand Total", round(grand_total, 2), "100%"])
+
+    buf.seek(0)
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=cloud_team_costs_{date.today().isoformat()}.csv"})

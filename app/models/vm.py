@@ -50,13 +50,20 @@ def _serialize(doc):
         elif del_date and isinstance(del_date, datetime):
             end_for_cost = del_date
         else:
-            end_for_cost = today
+            # Inactive but no deleted_date: use planned_end_date if it's in the past
+            planned = doc.get("planned_end_date")
+            if planned and isinstance(planned, datetime) and planned <= today:
+                end_for_cost = planned
+            else:
+                end_for_cost = today
         days = max(0, (end_for_cost - start).days)
         doc["total_cost"] = round(days * daily, 2)
         doc["total_cost_days"] = days
+        doc["cost_end_date"] = end_for_cost.strftime("%Y-%m-%d")
     else:
         doc["total_cost"] = 0.0
         doc["total_cost_days"] = 0
+        doc["cost_end_date"] = ""
 
     # ── Serialize dates to strings ─────────────────────────────────────────
     for field in ("start_date", "planned_end_date", "deleted_date", "created_at", "updated_at"):
@@ -160,11 +167,12 @@ def update_vm(vm_id, data):
     )
 
 
-def deactivate_vm(vm_id):
+def deactivate_vm(vm_id, deleted_date=None):
     now = datetime.utcnow()
+    d   = _parse_date(deleted_date) if deleted_date else now
     _db().vms.update_one(
         {"_id": ObjectId(vm_id)},
-        {"$set": {"status": "Inactive", "deleted_date": now, "updated_at": now}}
+        {"$set": {"status": "Inactive", "deleted_date": d or now, "updated_at": now}}
     )
 
 

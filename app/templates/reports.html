@@ -185,9 +185,31 @@
         <div class="row g-3 align-items-end">
           <div class="col-md-3">
             <label class="form-label fw-semibold">Cloud Provider</label>
-            <select id="teamProvider" class="form-select" multiple>
-              {% for p in cloud_providers %}
-              <option value="{{ p }}">{{ p }}</option>
+            <div class="dropdown w-100">
+              <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100 text-start"
+                      data-bs-toggle="dropdown" data-bs-auto-close="outside">
+                <span id="teamProviderLabel">All Providers</span>
+              </button>
+              <ul class="dropdown-menu p-2" style="min-width:200px;max-height:230px;overflow-y:auto">
+                {% for p in cloud_providers %}
+                <li>
+                  <div class="form-check mb-1">
+                    <input class="form-check-input team-provider-check" type="checkbox"
+                           value="{{ p }}" id="tp_{{ loop.index }}"
+                           onchange="updateTeamProviderLabel()">
+                    <label class="form-check-label small" for="tp_{{ loop.index }}">{{ p }}</label>
+                  </div>
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+          <div class="col-md-2">
+            <label class="form-label fw-semibold">Team</label>
+            <select id="teamFilter" class="form-select">
+              <option value="">All Teams</option>
+              {% for t in all_teams %}
+              <option value="{{ t }}">{{ t }}</option>
               {% endfor %}
             </select>
           </div>
@@ -214,12 +236,15 @@
               <input type="date" id="teamEnd" class="form-control">
             </div>
           </div>
-          <div class="col-auto d-flex gap-2">
+          <div class="col-auto d-flex gap-2 flex-wrap">
             <button class="btn btn-navy" onclick="loadTeam()">
               <i class="bi bi-people me-1"></i>Generate
             </button>
-            <button class="btn btn-outline-success" onclick="exportTeam()">
+            <button class="btn btn-outline-success" onclick="exportTeam()" title="Export team summary CSV">
               <i class="bi bi-download me-1"></i>CSV
+            </button>
+            <button class="btn btn-outline-primary" onclick="exportConsolidated()" title="Export Cloud × Team cost breakdown (like monthly tracker sheets)">
+              <i class="bi bi-table me-1"></i>Cloud × Team
             </button>
           </div>
         </div>
@@ -615,29 +640,55 @@ function loadCostCompare() {
 // ── TAB 3: Usage by Team ──────────────────────────────────────────────────────
 let teamChart = null;
 
+function updateTeamProviderLabel() {
+  const checked = document.querySelectorAll('.team-provider-check:checked');
+  const label   = document.getElementById('teamProviderLabel');
+  if (checked.length === 0)      label.textContent = 'All Providers';
+  else if (checked.length === 1) label.textContent = checked[0].value;
+  else                           label.textContent = checked.length + ' Providers';
+}
+
 function updateTeamPeriodControls() {
   const period = document.getElementById('teamPeriod').value;
   document.getElementById('teamDateRange').style.display = period === 'range' ? '' : 'none';
 }
 
-function loadTeam() {
-  const sel       = document.getElementById('teamProvider');
-  const providers = Array.from(sel.selectedOptions).map(o => o.value);
-  const status    = document.getElementById('teamStatus').value;
-  const period    = document.getElementById('teamPeriod').value;
-  const el        = document.getElementById('teamContent');
-  el.innerHTML    = spinner();
+function teamGradientColors(n) {
+  // Smooth gradient from deep navy → blue → teal → green
+  const stops = [[31,56,100],[46,117,182],[2,156,166],[32,201,151],[25,135,84]];
+  return Array.from({length: n}, (_, i) => {
+    const t   = n < 2 ? 0 : i / (n - 1);
+    const pos = t * (stops.length - 1);
+    const lo  = stops[Math.floor(pos)];
+    const hi  = stops[Math.min(Math.ceil(pos), stops.length - 1)];
+    const f   = pos - Math.floor(pos);
+    const [r, g, b] = [0, 1, 2].map(j => Math.round(lo[j] + (hi[j] - lo[j]) * f));
+    return `rgba(${r},${g},${b},0.82)`;
+  });
+}
 
-  let url = '/reports/usage-by-team?status=' + status;
-  providers.forEach(p => url += `&provider=${encodeURIComponent(p)}`);
+function _teamQueryParams() {
+  const providers  = Array.from(document.querySelectorAll('.team-provider-check:checked')).map(cb => cb.value);
+  const teamFilter = document.getElementById('teamFilter').value;
+  const status     = document.getElementById('teamStatus').value;
+  const period     = document.getElementById('teamPeriod').value;
+  let params = '?status=' + status;
+  providers.forEach(p => params += `&provider=${encodeURIComponent(p)}`);
+  if (teamFilter) params += `&team=${encodeURIComponent(teamFilter)}`;
   if (period === 'range') {
     const start = document.getElementById('teamStart').value;
     const end   = document.getElementById('teamEnd').value;
-    if (start) url += '&start=' + start;
-    if (end)   url += '&end='   + end;
+    if (start) params += '&start=' + start;
+    if (end)   params += '&end='   + end;
   }
+  return params;
+}
 
-  fetch(url)
+function loadTeam() {
+  const el = document.getElementById('teamContent');
+  el.innerHTML = spinner();
+
+  fetch('/reports/usage-by-team' + _teamQueryParams())
     .then(r => r.json())
     .then(data => {
       if (!data.length) {
@@ -646,8 +697,7 @@ function loadTeam() {
       }
       const labels = data.map(d => d.team);
       const costs  = data.map(d => d.total_daily_cost);
-      const colors = labels.map((_, i) => `hsl(${(i * 47) % 360}, 60%, 55%)`);
-      const grand  = costs.reduce((a, b) => a + b, 0);
+      const colors = teamGradientColors(labels.length);
 
       let rows = data.map((d, i) => `
         <tr>
@@ -687,7 +737,7 @@ function loadTeam() {
       if (teamChart) teamChart.destroy();
       teamChart = new Chart(document.getElementById('teamChart'), {
         type: 'bar',
-        data: { labels, datasets: [{ label: 'Daily Cost (INR)', data: costs, backgroundColor: colors, borderRadius: 4 }] },
+        data: { labels, datasets: [{ label: 'Daily Cost (INR)', data: costs, backgroundColor: colors, borderRadius: 6 }] },
         options: {
           indexAxis: 'y',
           plugins: {
@@ -702,19 +752,11 @@ function loadTeam() {
 }
 
 function exportTeam() {
-  const sel       = document.getElementById('teamProvider');
-  const providers = Array.from(sel.selectedOptions).map(o => o.value);
-  const status    = document.getElementById('teamStatus').value;
-  const period    = document.getElementById('teamPeriod').value;
-  let url = '/reports/export/usage-by-team?status=' + status;
-  providers.forEach(p => url += `&provider=${encodeURIComponent(p)}`);
-  if (period === 'range') {
-    const start = document.getElementById('teamStart').value;
-    const end   = document.getElementById('teamEnd').value;
-    if (start) url += '&start=' + start;
-    if (end)   url += '&end='   + end;
-  }
-  window.location = url;
+  window.location = '/reports/export/usage-by-team' + _teamQueryParams();
+}
+
+function exportConsolidated() {
+  window.location = '/reports/export/cloud-team-consolidated' + _teamQueryParams();
 }
 
 // ── TAB 4: Trends ─────────────────────────────────────────────────────────────
