@@ -5,6 +5,7 @@ from datetime import datetime, date
 from flask import (Blueprint, render_template, request, redirect,
                    url_for, flash, jsonify, Response)
 from flask_login import login_required
+from app.decorators import role_required
 from app.models.vm import (
     get_all_vms, get_vm, create_vm, update_vm, deactivate_vm, delete_vm,
     get_distinct_teams, get_stats, CLOUD_PROVIDERS, TAGS_OPTIONS,
@@ -241,6 +242,7 @@ def index():
 
 @dashboard_bp.route("/vms/add", methods=["POST"])
 @login_required
+@role_required("admin", "editor")
 def add_vm():
     data = request.form.to_dict()
     data["tags"] = request.form.getlist("tags")
@@ -254,6 +256,7 @@ def add_vm():
 
 @dashboard_bp.route("/vms/<vm_id>/edit", methods=["POST"])
 @login_required
+@role_required("admin", "editor")
 def edit_vm(vm_id):
     data = request.form.to_dict()
     data["tags"] = request.form.getlist("tags")
@@ -267,6 +270,7 @@ def edit_vm(vm_id):
 
 @dashboard_bp.route("/vms/<vm_id>/deactivate", methods=["POST"])
 @login_required
+@role_required("admin", "editor")
 def deactivate(vm_id):
     deleted_on = request.form.get("deleted_date", "").strip()
     deactivate_vm(vm_id, deleted_on or None)
@@ -276,6 +280,7 @@ def deactivate(vm_id):
 
 @dashboard_bp.route("/vms/<vm_id>/delete", methods=["POST"])
 @login_required
+@role_required("admin")
 def delete(vm_id):
     delete_vm(vm_id)
     flash("VM permanently deleted.", "danger")
@@ -305,6 +310,7 @@ def _vm_fingerprint(data):
 
 @dashboard_bp.route("/vms/import", methods=["POST"])
 @login_required
+@role_required("admin")
 def import_vms():
     file = request.files.get("csv_file")
     if not file or not file.filename.lower().endswith(".csv"):

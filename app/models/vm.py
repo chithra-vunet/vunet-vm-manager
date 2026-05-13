@@ -140,6 +140,7 @@ def _vm_fields(data):
         "vm_name":           data["vm_name"].strip(),
         "ip_address":        data["ip_address"].strip(),
         "requested_by":      data["requested_by"].strip(),
+        "requester_email":   data.get("requester_email", "").strip().lower(),
         "team_name":         data["team_name"].strip(),
         "subscription_plan": data.get("subscription_plan", "").strip(),
         "purpose":           data.get("purpose", "").strip(),

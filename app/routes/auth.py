@@ -20,6 +20,46 @@ def login():
     return render_template("login.html")
 
 
+@auth_bp.route("/auth/google")
+def google_login():
+    import app as _app_module
+    redirect_uri = url_for("auth.google_callback", _external=True)
+    return _app_module.oauth.google.authorize_redirect(redirect_uri)
+
+
+@auth_bp.route("/auth/google/callback")
+def google_callback():
+    import app as _app_module
+    try:
+        token    = _app_module.oauth.google.authorize_access_token()
+        userinfo = token.get("userinfo", {})
+        email    = (userinfo.get("email") or "").strip().lower()
+        google_id = userinfo.get("sub", "")
+        name      = userinfo.get("name", "")
+    except Exception as exc:
+        flash(f"Google sign-in failed: {exc}", "danger")
+        return redirect(url_for("auth.login"))
+
+    if not email:
+        flash("Could not retrieve your email from Google. Try again.", "danger")
+        return redirect(url_for("auth.login"))
+
+    user = User.find_by_email(email)
+    if not user:
+        flash(
+            "Your Google account is not authorised to access VM Manager. "
+            "Ask your IT administrator to invite you.",
+            "danger",
+        )
+        return redirect(url_for("auth.login"))
+
+    User.activate_google(email, google_id, name)
+    user = User.find_by_email(email)
+    login_user(user, remember=True)
+    flash(f"Welcome, {user.display_name}!", "success")
+    return redirect(url_for("dashboard.index"))
+
+
 @auth_bp.route("/logout")
 @login_required
 def logout():

@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}User Management{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h4 class="mb-0 fw-bold text-navy"><i class="bi bi-people-fill me-2"></i>User Management</h4>
+</div>
+
+<div class="row g-4">
+
+  {# ── Invite a new user ──────────────────────────────────────────────────── #}
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-navy text-white fw-semibold">
+        <i class="bi bi-person-plus me-2"></i>Invite a New User
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('users.invite') }}" class="row g-3 align-items-end">
+          <div class="col-md-5">
+            <label class="form-label fw-semibold">Gmail Address <span class="text-danger">*</span></label>
+            <input type="email" name="email" class="form-control" placeholder="user@gmail.com" required>
+            <div class="form-text">The user will sign in using this Google account.</div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Role <span class="text-danger">*</span></label>
+            <select name="role" class="form-select" required>
+              <option value="viewer">Viewer — read only</option>
+              <option value="editor">Editor — view + add + edit</option>
+              <option value="admin">Admin — full access</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <button type="submit" class="btn btn-navy w-100">
+              <i class="bi bi-envelope-arrow-up me-1"></i>Send Invite Email
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {# ── Current users table ────────────────────────────────────────────────── #}
+  <div class="col-12">
+    <div class="card shadow-sm">
+      <div class="card-header bg-navy text-white fw-semibold">
+        <i class="bi bi-person-lines-fill me-2"></i>Current Users
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>User</th>
+              <th>Login Method</th>
+              <th>Role</th>
+              <th>Status</th>
+              <th>Change Role</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for u in users %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ u.display_name or u.email or u.username }}</div>
+                <div class="text-muted small">{{ u.email }}</div>
+              </td>
+              <td>
+                {% if u.username %}
+                  <span class="badge bg-secondary"><i class="bi bi-key me-1"></i>Password</span>
+                {% else %}
+                  <span class="badge" style="background:#4285F4">
+                    <i class="bi bi-google me-1"></i>Google
+                  </span>
+                {% endif %}
+              </td>
+              <td>
+                {% if u.role == 'admin' %}
+                  <span class="badge bg-danger">Admin</span>
+                {% elif u.role == 'editor' %}
+                  <span class="badge bg-primary">Editor</span>
+                {% else %}
+                  <span class="badge bg-secondary">Viewer</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if u.status == 'invited' %}
+                  <span class="badge bg-warning text-dark">Invited</span>
+                {% else %}
+                  <span class="badge bg-success">Active</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if u.id != current_user.id %}
+                <form method="POST" action="{{ url_for('users.update_role', user_id=u.id) }}"
+                      class="d-flex gap-2 align-items-center">
+                  <select name="role" class="form-select form-select-sm" style="width:auto">
+                    {% for r in roles %}
+                    <option value="{{ r }}" {% if u.role == r %}selected{% endif %}>{{ r | title }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn-outline-primary btn-sm">Save</button>
+                </form>
+                {% else %}
+                  <span class="text-muted small">(you)</span>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                {% if u.id != current_user.id %}
+                <form method="POST" action="{{ url_for('users.delete', user_id=u.id) }}"
+                      onsubmit="return confirm('Remove {{ u.display_name or u.email }}? They will lose access immediately.')">
+                  <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-person-x"></i>
+                  </button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── Role reference ─────────────────────────────────────────────────────── #}
+  <div class="col-12">
+    <div class="card shadow-sm border-0" style="background:#f8f9fa">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3"><i class="bi bi-info-circle me-1 text-navy"></i>Role Permissions</h6>
+        <div class="row g-3">
+          <div class="col-md-4">
+            <div class="d-flex align-items-start gap-2">
+              <span class="badge bg-secondary mt-1">Viewer</span>
+              <div class="small text-muted">View dashboard, reports, and export CSV. No modifications.</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="d-flex align-items-start gap-2">
+              <span class="badge bg-primary mt-1">Editor</span>
+              <div class="small text-muted">Add, edit, and deactivate VMs. View reports. Cannot delete or import.</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="d-flex align-items-start gap-2">
+              <span class="badge bg-danger mt-1">Admin</span>
+              <div class="small text-muted">Full access including delete, bulk import, user management, and settings.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
