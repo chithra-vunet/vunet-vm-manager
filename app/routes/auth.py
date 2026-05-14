@@ -62,7 +62,7 @@ def google_callback():
 
     User.activate_google(email, google_id, name)
     user = User.find_by_email(email)
-    login_user(user, remember=True)
+    login_user(user)
     flash(f"Welcome, {user.display_name}!", "success")
     return redirect(url_for("dashboard.index"))
 

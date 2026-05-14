@@ -91,11 +91,11 @@ def send_expiry_alerts(app):
 
         log.info("Expiry check: %d VM(s) expiring within %d day(s).", len(vms), alert_days)
 
-        # Send per-requester alert
+        # Send per-requester alert (only @vunetsystems.com addresses)
         by_requester: dict[str, list] = {}
         for vm in vms:
             email = (vm.get("requester_email") or "").strip().lower()
-            if email:
+            if email and email.endswith("@vunetsystems.com"):
                 by_requester.setdefault(email, []).append(vm)
 
         for email, vm_list in by_requester.items():
@@ -111,6 +111,10 @@ def send_expiry_alerts(app):
                 log.error("Failed to send alert to %s: %s", email, exc)
 
         # Send admin digest (all expiring VMs)
+        if admin and not admin.endswith("@vunetsystems.com"):
+            log.warning("Admin email %s is not a vunetsystems.com address — skipping digest.", admin)
+            admin = ""
+
         if admin:
             try:
                 _send_email(
@@ -126,6 +130,10 @@ def send_expiry_alerts(app):
 
 def send_welcome_email(invited_email, role, signin_url):
     """Send a welcome / access-granted email to a newly invited user."""
+    if not invited_email.endswith("@vunetsystems.com"):
+        log.warning("Skipping welcome email — %s is not a vunetsystems.com address.", invited_email)
+        return
+
     from app.models.settings import get_settings
     s = get_settings()
     if not s.get("mail_username") or not s.get("mail_password"):

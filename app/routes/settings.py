@@ -10,7 +10,11 @@ settings_bp = Blueprint("settings", __name__)
 @login_required
 @role_required("admin")
 def index():
-    return render_template("settings.html", s=get_settings())
+    s = get_settings()
+    admin = (s.get("admin_email") or "").strip()
+    if admin and not admin.endswith("@vunetsystems.com"):
+        flash(f"Admin alert email '{admin}' is not a @vunetsystems.com address — please update it.", "warning")
+    return render_template("settings.html", s=s)
 
 
 @settings_bp.route("/settings/save", methods=["POST"])
@@ -18,15 +22,22 @@ def index():
 @role_required("admin")
 def save():
     f = request.form
+    mail_username = f.get("mail_username", "").strip().lower()
+    admin_email   = f.get("admin_email", "").strip().lower()
+
+    if admin_email and not admin_email.endswith("@vunetsystems.com"):
+        flash("Admin alert email must be a @vunetsystems.com address.", "danger")
+        return redirect(url_for("settings.index"))
+
     current  = get_settings()
     password = f.get("mail_password", "").strip()
     if not password:
         password = current.get("mail_password", "")
 
     save_settings({
-        "mail_username":  f.get("mail_username", "").strip().lower(),
+        "mail_username":  mail_username,
         "mail_password":  password,
-        "admin_email":    f.get("admin_email", "").strip().lower(),
+        "admin_email":    admin_email,
         "alert_days":     max(1, int(f.get("alert_days") or 2)),
         "alerts_enabled": f.get("alerts_enabled") == "1",
     })
