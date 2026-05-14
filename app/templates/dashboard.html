@@ -218,12 +218,24 @@
             <th data-col="col-team">Team</th>
             <th data-col="col-plan">Plan</th>
             <th data-col="col-purpose">Purpose</th>
-            <th data-col="col-start">Start Date</th>
-            <th data-col="col-end">Planned End</th>
+            <th data-col="col-start" style="cursor:pointer;white-space:nowrap" onclick="sortBy('start_date')">
+              Start Date
+              <i class="bi {% if sort_by == 'start_date' %}{% if sort_dir == 'desc' %}bi-arrow-down{% else %}bi-arrow-up{% endif %}{% else %}bi-arrow-down-up text-muted opacity-50{% endif %} ms-1 small"></i>
+            </th>
+            <th data-col="col-end" style="cursor:pointer;white-space:nowrap" onclick="sortBy('planned_end_date')">
+              Planned End
+              <i class="bi {% if sort_by == 'planned_end_date' %}{% if sort_dir == 'desc' %}bi-arrow-down{% else %}bi-arrow-up{% endif %}{% else %}bi-arrow-down-up text-muted opacity-50{% endif %} ms-1 small"></i>
+            </th>
             <th data-col="col-status">Status</th>
             <th data-col="col-deleted">Deleted Date</th>
-            <th data-col="col-daily">Daily Cost</th>
-            <th data-col="col-total">Total Cost</th>
+            <th data-col="col-daily" style="cursor:pointer;white-space:nowrap" onclick="sortBy('daily_cost')">
+              Daily Cost
+              <i class="bi {% if sort_by == 'daily_cost' %}{% if sort_dir == 'desc' %}bi-arrow-down{% else %}bi-arrow-up{% endif %}{% else %}bi-arrow-down-up text-muted opacity-50{% endif %} ms-1 small"></i>
+            </th>
+            <th data-col="col-total" style="cursor:pointer;white-space:nowrap" onclick="sortBy('total_cost')">
+              Total Cost
+              <i class="bi {% if sort_by == 'total_cost' %}{% if sort_dir == 'desc' %}bi-arrow-down{% else %}bi-arrow-up{% endif %}{% else %}bi-arrow-down-up text-muted opacity-50{% endif %} ms-1 small"></i>
+            </th>
             <th class="text-center">Actions</th>
           </tr>
         </thead>
@@ -367,23 +379,6 @@
           </p>
 
           <div class="mb-3">
-            <label class="form-label fw-semibold">
-              Cloud Provider
-              <span class="text-muted fw-normal small ms-1">(required if not in the CSV)</span>
-            </label>
-            <select name="cloud_provider" class="form-select form-select-sm">
-              <option value="">— Use value from CSV column —</option>
-              {% for p in cloud_providers %}
-              <option value="{{ p }}">{{ p }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">
-              Select a provider if your sheet doesn't have a "Cloud Provider" column.
-              Rows without a provider will be skipped.
-            </div>
-          </div>
-
-          <div class="mb-3">
             <label class="form-label fw-semibold">CSV File</label>
             <input type="file" name="csv_file" class="form-control" accept=".csv" required>
           </div>
@@ -430,7 +425,7 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
-          {{ vm_form_fields(cloud_providers, tags_options, {}) }}
+          {{ vm_form_fields(cloud_providers, {}) }}
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -528,7 +523,7 @@
 {# ═══════════════════════════════════════════════════════════════════════════ #}
 {# MACRO: reusable form fields                                                 #}
 {# ═══════════════════════════════════════════════════════════════════════════ #}
-{% macro vm_form_fields(cloud_providers, tags_options, vm) %}
+{% macro vm_form_fields(cloud_providers, vm) %}
 <div class="row g-3">
   <div class="col-md-6">
     <label class="form-label fw-semibold">Cloud Provider <span class="text-danger">*</span></label>
@@ -606,27 +601,23 @@
              value="{{ vm.get('daily_cost', '') }}" placeholder="0.00">
     </div>
   </div>
-  <div class="col-12">
-    <label class="form-label fw-semibold">Tags</label>
-    <div class="d-flex gap-3 flex-wrap pt-1">
-      {% for tag in tags_options %}
-      <div class="form-check">
-        <input class="form-check-input" type="checkbox" name="tags" value="{{ tag }}"
-               id="tag_{{ tag }}_{{ vm.get('_id','new') }}"
-               {% if tag in (vm.get('tags') or []) %}checked{% endif %}>
-        <label class="form-check-label badge tag-{{ tag }}" for="tag_{{ tag }}_{{ vm.get('_id','new') }}">
-          {{ tag }}
-        </label>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
 </div>
 {% endmacro %}
 
 
 {% block scripts %}
 <script>
+// ── Sort ──────────────────────────────────────────────────────────────────────
+function sortBy(field) {
+  const params = new URLSearchParams(window.location.search);
+  const cur    = params.get('sort_by');
+  const dir    = params.get('sort_dir') || 'asc';
+  params.set('sort_by',  field);
+  params.set('sort_dir', cur === field && dir === 'asc' ? 'desc' : 'asc');
+  params.set('page', '1');
+  window.location.search = params.toString();
+}
+
 // ── Filter dropdown labels ────────────────────────────────────────────────────
 function updateDropLabel(checkClass, labelId, singular) {
   const checked = document.querySelectorAll('.' + checkClass + ':checked');
@@ -654,18 +645,9 @@ function openEditModal(vmId) {
 
 function buildFormHTML(vm) {
   const providers = {{ cloud_providers | tojson }};
-  const tags      = {{ tags_options   | tojson }};
 
   const providerOptions = providers.map(p =>
     `<option value="${p}" ${vm.cloud_provider === p ? 'selected' : ''}>${p}</option>`
-  ).join('');
-
-  const tagChecks = tags.map(t =>
-    `<div class="form-check">
-      <input class="form-check-input" type="checkbox" name="tags" value="${t}"
-             id="etag_${t}" ${(vm.tags||[]).includes(t) ? 'checked' : ''}>
-      <label class="form-check-label badge tag-${t}" for="etag_${t}">${t}</label>
-    </div>`
   ).join('');
 
   const isActive = vm.status === 'Active';
@@ -733,10 +715,6 @@ function buildFormHTML(vm) {
         <span class="input-group-text">₹</span>
         <input type="number" name="daily_cost" class="form-control" required min="0" step="0.01" value="${vm.daily_cost||0}">
       </div>
-    </div>
-    <div class="col-12">
-      <label class="form-label fw-semibold">Tags</label>
-      <div class="d-flex gap-3 flex-wrap pt-1">${tagChecks}</div>
     </div>
   </div>`;
 }

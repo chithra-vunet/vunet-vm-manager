@@ -26,6 +26,10 @@ def invite():
         flash("Valid email and role are required.", "danger")
         return redirect(url_for("users.index"))
 
+    if not email.endswith("@vunetsystems.com"):
+        flash("This email is not from the organisation. Only @vunetsystems.com accounts can be invited.", "danger")
+        return redirect(url_for("users.index"))
+
     existing = User.find_by_email(email)
     if existing:
         flash(f"{email} already has access ({existing.role}).", "warning")

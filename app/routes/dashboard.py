@@ -8,7 +8,7 @@ from flask_login import login_required
 from app.decorators import role_required
 from app.models.vm import (
     get_all_vms, get_vm, create_vm, update_vm, deactivate_vm, delete_vm,
-    get_distinct_teams, get_stats, CLOUD_PROVIDERS, TAGS_OPTIONS,
+    get_distinct_teams, get_stats, CLOUD_PROVIDERS,
 )
 
 dashboard_bp = Blueprint("dashboard", __name__)
@@ -94,7 +94,6 @@ _FIELD_KEYWORDS = {
     "subscription_plan": [["subscription plan"], ["subscription_plan"], ["plan"]],
     "purpose":           [["purpose"]],
     "planned_end_date":  [["planned end"], ["planned_end"]],
-    "tags":              [["tags"]],
 }
 
 
@@ -182,9 +181,6 @@ def _map_row(row, default_provider=""):
     # Planned end: explicit column first, then extract from VM name
     planned = _find_col(row, _FIELD_KEYWORDS["planned_end_date"]) or _extract_planned_end(name)
 
-    tags_raw = _find_col(row, _FIELD_KEYWORDS["tags"])
-    tags     = [t.strip() for t in tags_raw.split(",") if t.strip()] if tags_raw else []
-
     return {
         "cloud_provider":    provider,
         "vm_name":           name,
@@ -198,7 +194,6 @@ def _map_row(row, default_provider=""):
         "daily_cost":        _float(cost_raw),
         "subscription_plan": plan,
         "purpose":           purpose,
-        "tags":              tags,
     }
 
 
@@ -212,6 +207,8 @@ def index():
     teams     = request.args.getlist("team")
     status    = request.args.get("status", "All")
     page      = max(1, int(request.args.get("page", 1)))
+    sort_by   = request.args.get("sort_by", "")
+    sort_dir  = request.args.get("sort_dir", "asc")
 
     vms, total = get_all_vms(
         search    = search    or None,
@@ -220,6 +217,8 @@ def index():
         status    = status,
         page      = page,
         per_page  = PER_PAGE,
+        sort_by   = sort_by   or None,
+        sort_dir  = sort_dir,
     )
     total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
 
@@ -229,7 +228,6 @@ def index():
         stats              = get_stats(),
         all_teams          = get_distinct_teams(),
         cloud_providers    = CLOUD_PROVIDERS,
-        tags_options       = TAGS_OPTIONS,
         search             = search,
         selected_providers = providers,
         selected_teams     = teams,
@@ -237,6 +235,8 @@ def index():
         page               = page,
         total_pages        = total_pages,
         total              = total,
+        sort_by            = sort_by,
+        sort_dir           = sort_dir,
     )
 
 
@@ -245,7 +245,6 @@ def index():
 @role_required("admin", "editor")
 def add_vm():
     data = request.form.to_dict()
-    data["tags"] = request.form.getlist("tags")
     try:
         create_vm(data)
         flash("VM added successfully.", "success")
@@ -259,7 +258,6 @@ def add_vm():
 @role_required("admin", "editor")
 def edit_vm(vm_id):
     data = request.form.to_dict()
-    data["tags"] = request.form.getlist("tags")
     try:
         update_vm(vm_id, data)
         flash("VM updated successfully.", "success")
@@ -378,8 +376,7 @@ def import_vms():
         if parts:
             flash(" · ".join(parts) + ".", "success" if added or updated else "info")
         if no_prov:
-            flash(f"{no_prov} row(s) skipped — no Cloud Provider found in CSV. "
-                  "Select one in the import form.", "warning")
+            flash(f"{no_prov} row(s) skipped — no Cloud Provider column found in CSV.", "warning")
         if errors:
             flash(f"{len(errors)} row(s) had errors: " + "; ".join(errors[:5]), "warning")
         if not added and not updated and not errors and not no_prov and not duplicates:
@@ -396,7 +393,7 @@ _CSV_HEADERS = [
     "Cloud Provider", "VM Name", "IP Address", "Requested By", "Team",
     "Subscription Plan", "Purpose",
     "Start Date", "Planned End Date", "Status", "Deleted Date",
-    "Daily Cost (INR)", "Total Cost (INR)", "Tags",
+    "Daily Cost (INR)", "Total Cost (INR)",
 ]
 
 
@@ -408,7 +405,6 @@ def _vm_csv_row(v):
         v.get("start_date", ""), v.get("planned_end_date", ""),
         v["status"], v.get("deleted_date") or "",
         v["daily_cost"], v.get("total_cost", 0),
-        ", ".join(v.get("tags") or []),
     ]
 
 

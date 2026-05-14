@@ -44,6 +44,13 @@ def google_callback():
         flash("Could not retrieve your email from Google. Try again.", "danger")
         return redirect(url_for("auth.login"))
 
+    if not email.endswith("@vunetsystems.com"):
+        flash(
+            "Only @vunetsystems.com accounts are allowed to access VM Manager.",
+            "danger",
+        )
+        return redirect(url_for("auth.login"))
+
     user = User.find_by_email(email)
     if not user:
         flash(

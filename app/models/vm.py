@@ -4,7 +4,6 @@ import app as _app
 
 CLOUD_PROVIDERS = ["Azure-Billed", "Azure-FreeCredits", "AWS", "GCP", "E2E", "C4I", "Tower"]
 STATUSES = ["Active", "Inactive"]
-TAGS_OPTIONS = ["dev", "test", "prod", "staging"]
 
 PROVIDER_COLORS = {
     "Azure-Billed":       "primary",
@@ -88,7 +87,16 @@ def _serialize(doc):
 
 # ── Queries ────────────────────────────────────────────────────────────────────
 
-def get_all_vms(search=None, providers=None, teams=None, status=None, page=1, per_page=25):
+_SORT_FIELDS = {
+    "start_date":       "start_date",
+    "planned_end_date": "planned_end_date",
+    "daily_cost":       "daily_cost",
+    "total_cost":       "daily_cost",   # total_cost is computed; daily_cost is a valid proxy
+}
+
+
+def get_all_vms(search=None, providers=None, teams=None, status=None,
+                page=1, per_page=25, sort_by=None, sort_dir="asc"):
     query = {}
     if status and status != "All":
         query["status"] = status
@@ -98,15 +106,20 @@ def get_all_vms(search=None, providers=None, teams=None, status=None, page=1, pe
         query["team_name"] = {"$in": teams}
     if search:
         query["$or"] = [
-            {"vm_name":     {"$regex": search, "$options": "i"}},
-            {"ip_address":  {"$regex": search, "$options": "i"}},
-            {"requested_by":{"$regex": search, "$options": "i"}},
+            {"vm_name":      {"$regex": search, "$options": "i"}},
+            {"ip_address":   {"$regex": search, "$options": "i"}},
+            {"requested_by": {"$regex": search, "$options": "i"}},
         ]
 
-    db = _db()
+    mongo_field = _SORT_FIELDS.get(sort_by, "created_at")
+    direction   = 1 if sort_dir == "asc" else -1
+    if sort_by not in _SORT_FIELDS:
+        direction = -1   # default: newest first
+
+    db    = _db()
     total = db.vms.count_documents(query)
     skip  = (page - 1) * per_page
-    docs  = list(db.vms.find(query).sort("created_at", -1).skip(skip).limit(per_page))
+    docs  = list(db.vms.find(query).sort(mongo_field, direction).skip(skip).limit(per_page))
     return [_serialize(d) for d in docs], total
 
 
@@ -124,17 +137,8 @@ def get_distinct_teams():
 
 # ── Writes ─────────────────────────────────────────────────────────────────────
 
-def _coerce_tags(raw):
-    if not raw:
-        return []
-    if isinstance(raw, str):
-        return [t.strip() for t in raw.split(",") if t.strip()]
-    return list(raw)
-
-
 def _vm_fields(data):
     status = data.get("status", "Active")
-    tags   = _coerce_tags(data.get("tags"))
     return {
         "cloud_provider":    data["cloud_provider"],
         "vm_name":           data["vm_name"].strip(),
@@ -149,7 +153,6 @@ def _vm_fields(data):
         "status":            status,
         "deleted_date":      _parse_date(data.get("deleted_date")) if status == "Inactive" else None,
         "daily_cost":        float(data.get("daily_cost") or 0),
-        "tags":              tags,
     }
 
 
