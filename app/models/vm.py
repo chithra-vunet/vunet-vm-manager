@@ -142,7 +142,7 @@ def _vm_fields(data):
     return {
         "cloud_provider":    data["cloud_provider"],
         "vm_name":           data["vm_name"].strip(),
-        "ip_address":        data["ip_address"].strip(),
+        "ip_address":        data.get("ip_address", "").strip() or "NA",
         "requested_by":      data["requested_by"].strip(),
         "requester_email":   data.get("requester_email", "").strip().lower(),
         "team_name":         data["team_name"].strip(),
@@ -157,31 +157,39 @@ def _vm_fields(data):
 
 
 def create_vm(data):
-    now = datetime.utcnow()
-    doc = {**_vm_fields(data), "created_at": now, "updated_at": now}
+    from app.sheets import sync_async
+    now    = datetime.utcnow()
+    doc    = {**_vm_fields(data), "created_at": now, "updated_at": now}
     result = _db().vms.insert_one(doc)
+    sync_async()
     return str(result.inserted_id)
 
 
 def update_vm(vm_id, data):
+    from app.sheets import sync_async
     now = datetime.utcnow()
     _db().vms.update_one(
         {"_id": ObjectId(vm_id)},
         {"$set": {**_vm_fields(data), "updated_at": now}},
     )
+    sync_async()
 
 
 def deactivate_vm(vm_id, deleted_date=None):
+    from app.sheets import sync_async
     now = datetime.utcnow()
     d   = _parse_date(deleted_date) if deleted_date else now
     _db().vms.update_one(
         {"_id": ObjectId(vm_id)},
         {"$set": {"status": "Inactive", "deleted_date": d or now, "updated_at": now}}
     )
+    sync_async()
 
 
 def delete_vm(vm_id):
+    from app.sheets import sync_async
     _db().vms.delete_one({"_id": ObjectId(vm_id)})
+    sync_async()
 
 
 # ── Dashboard stats ────────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ def _html_table(vms, today):
         rows += (
             f"<tr>"
             f"<td style='padding:6px 12px'>{vm['vm_name']}</td>"
+            f"<td style='padding:6px 12px'>{vm.get('ip_address','—')}</td>"
             f"<td style='padding:6px 12px'>{vm.get('cloud_provider','—')}</td>"
             f"<td style='padding:6px 12px'>{vm.get('team_name','—')}</td>"
             f"<td style='padding:6px 12px'>{vm.get('requested_by','—')}</td>"
@@ -32,6 +33,7 @@ def _html_table(vms, today):
   <thead style="background:#1a3a5c;color:#fff">
     <tr>
       <th style="padding:8px 12px;text-align:left">VM Name</th>
+      <th style="padding:8px 12px;text-align:left">IP Address</th>
       <th style="padding:8px 12px;text-align:left">Provider</th>
       <th style="padding:8px 12px;text-align:left">Team</th>
       <th style="padding:8px 12px;text-align:left">Requested By</th>
@@ -41,7 +43,6 @@ def _html_table(vms, today):
   </thead>
   <tbody>{rows}</tbody>
 </table>
-<p style="margin-top:16px">Log in to <strong>VUNet VM Manager</strong> to manage these VMs.</p>
 <p style="color:#888;font-size:11px;margin-top:24px">— VUNet VM Manager automated alert</p>
 </body></html>"""
 
@@ -180,11 +181,11 @@ def init_scheduler(app):
         func=send_expiry_alerts,
         args=[app],
         trigger="cron",
-        hour=9,
-        minute=0,
+        hour=3,
+        minute=30,
         id="vm_expiry_alerts",
         replace_existing=True,
     )
     scheduler.start()
-    log.info("VM expiry alert scheduler started — runs daily at 09:00 UTC.")
+    log.info("VM expiry alert scheduler started — runs daily at 03:30 UTC (09:00 IST).")
     return scheduler

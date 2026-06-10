@@ -89,6 +89,7 @@ _FIELD_KEYWORDS = {
     "status":            [["current status"], ["status"]],
     "daily_cost":        [["per day cost"], ["per_day_cost"], ["daily cost"], ["day cost"]],
     "requested_by":      [["requested by"], ["requested_by"], ["owner"]],
+    "requester_email":   [["requester email"], ["requester_email"], ["email"]],
     "team_name":         [["owned by team"], ["team name"], ["team_name"], ["team"]],
     "cloud_provider":    [["cloud provider"], ["cloud_provider"]],
     "subscription_plan": [["subscription plan"], ["subscription_plan"], ["plan"]],
@@ -174,6 +175,7 @@ def _map_row(row, default_provider=""):
     start_raw = _find_col(row, _FIELD_KEYWORDS["start_date"])
     cost_raw  = _find_col(row, _FIELD_KEYWORDS["daily_cost"])
     owner     = _find_col(row, _FIELD_KEYWORDS["requested_by"])
+    email     = _find_col(row, _FIELD_KEYWORDS["requester_email"]).lower()
     team      = _find_col(row, _FIELD_KEYWORDS["team_name"])
     plan      = _find_col(row, _FIELD_KEYWORDS["subscription_plan"])
     purpose   = _find_col(row, _FIELD_KEYWORDS["purpose"])
@@ -186,9 +188,10 @@ def _map_row(row, default_provider=""):
         "vm_name":           name,
         "ip_address":        ip,
         "requested_by":      owner,
+        "requester_email":   email,
         "team_name":         team,
         "start_date":        _parse_flex_date(start_raw),
-        "planned_end_date":  planned,
+        "planned_end_date":  _parse_flex_date(planned),
         "status":            status,
         "deleted_date":      _parse_flex_date(del_raw) if del_raw and status == "Inactive" else "",
         "daily_cost":        _float(cost_raw),
@@ -199,16 +202,19 @@ def _map_row(row, default_provider=""):
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
-@dashboard_bp.route("/")
+@dashboard_bp.route("/vm-manager/")
 @login_required
 def index():
-    search    = request.args.get("search", "").strip()
-    providers = request.args.getlist("provider")
-    teams     = request.args.getlist("team")
-    status    = request.args.get("status", "All")
-    page      = max(1, int(request.args.get("page", 1)))
-    sort_by   = request.args.get("sort_by", "")
-    sort_dir  = request.args.get("sort_dir", "asc")
+    search       = request.args.get("search", "").strip()
+    providers    = request.args.getlist("provider")
+    teams        = request.args.getlist("team")
+    status       = request.args.get("status", "All")
+    page         = max(1, int(request.args.get("page", 1)))
+    sort_by      = request.args.get("sort_by", "")
+    sort_dir     = request.args.get("sort_dir", "asc")
+    per_page_raw = request.args.get("per_page", "25")
+    show_all     = per_page_raw == "all"
+    per_page     = 10000 if show_all else max(1, int(per_page_raw or 25))
 
     vms, total = get_all_vms(
         search    = search    or None,
@@ -216,11 +222,11 @@ def index():
         teams     = teams     or None,
         status    = status,
         page      = page,
-        per_page  = PER_PAGE,
+        per_page  = per_page,
         sort_by   = sort_by   or None,
         sort_dir  = sort_dir,
     )
-    total_pages = max(1, (total + PER_PAGE - 1) // PER_PAGE)
+    total_pages = 1 if show_all else max(1, (total + per_page - 1) // per_page)
 
     return render_template(
         "dashboard.html",
@@ -237,10 +243,12 @@ def index():
         total              = total,
         sort_by            = sort_by,
         sort_dir           = sort_dir,
+        per_page_raw       = per_page_raw,
+        show_all           = show_all,
     )
 
 
-@dashboard_bp.route("/vms/add", methods=["POST"])
+@dashboard_bp.route("/vm-manager/vms/add/", methods=["POST"])
 @login_required
 @role_required("admin", "editor")
 def add_vm():
@@ -253,7 +261,7 @@ def add_vm():
     return redirect(_back())
 
 
-@dashboard_bp.route("/vms/<vm_id>/edit", methods=["POST"])
+@dashboard_bp.route("/vm-manager/vms/<vm_id>/edit/", methods=["POST"])
 @login_required
 @role_required("admin", "editor")
 def edit_vm(vm_id):
@@ -266,7 +274,7 @@ def edit_vm(vm_id):
     return redirect(_back())
 
 
-@dashboard_bp.route("/vms/<vm_id>/deactivate", methods=["POST"])
+@dashboard_bp.route("/vm-manager/vms/<vm_id>/deactivate/", methods=["POST"])
 @login_required
 @role_required("admin", "editor")
 def deactivate(vm_id):
@@ -276,7 +284,7 @@ def deactivate(vm_id):
     return redirect(_back())
 
 
-@dashboard_bp.route("/vms/<vm_id>/delete", methods=["POST"])
+@dashboard_bp.route("/vm-manager/vms/<vm_id>/delete/", methods=["POST"])
 @login_required
 @role_required("admin")
 def delete(vm_id):
@@ -285,7 +293,7 @@ def delete(vm_id):
     return redirect(_back())
 
 
-@dashboard_bp.route("/vms/<vm_id>/json")
+@dashboard_bp.route("/vm-manager/vms/<vm_id>/json/")
 @login_required
 def vm_json(vm_id):
     vm = get_vm(vm_id)
@@ -306,7 +314,7 @@ def _vm_fingerprint(data):
     )
 
 
-@dashboard_bp.route("/vms/import", methods=["POST"])
+@dashboard_bp.route("/vm-manager/vms/import/", methods=["POST"])
 @login_required
 @role_required("admin")
 def import_vms():
@@ -418,7 +426,7 @@ def _write_csv(vms):
     return buf
 
 
-@dashboard_bp.route("/export/vms")
+@dashboard_bp.route("/vm-manager/export/vms/")
 @login_required
 def export_vms():
     search    = request.args.get("search", "").strip() or None
@@ -432,7 +440,7 @@ def export_vms():
                     headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
-@dashboard_bp.route("/export/all")
+@dashboard_bp.route("/vm-manager/export/all/")
 @login_required
 def export_all():
     vms, _   = get_all_vms(page=1, per_page=100_000)

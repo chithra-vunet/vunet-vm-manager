@@ -5,7 +5,7 @@ from app.models.user import User
 auth_bp = Blueprint("auth", __name__)
 
 
-@auth_bp.route("/login", methods=["GET", "POST"])
+@auth_bp.route("/vm-manager/login/", methods=["GET", "POST"])
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("dashboard.index"))
@@ -20,14 +20,14 @@ def login():
     return render_template("login.html")
 
 
-@auth_bp.route("/auth/google")
+@auth_bp.route("/vm-manager/auth/google/")
 def google_login():
     import app as _app_module
     redirect_uri = url_for("auth.google_callback", _external=True)
     return _app_module.oauth.google.authorize_redirect(redirect_uri)
 
 
-@auth_bp.route("/auth/google/callback")
+@auth_bp.route("/vm-manager/auth/google/callback/")
 def google_callback():
     import app as _app_module
     try:
@@ -67,7 +67,7 @@ def google_callback():
     return redirect(url_for("dashboard.index"))
 
 
-@auth_bp.route("/logout")
+@auth_bp.route("/vm-manager/logout/")
 @login_required
 def logout():
     logout_user()

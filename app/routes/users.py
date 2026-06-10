@@ -8,14 +8,14 @@ users_bp = Blueprint("users", __name__)
 ROLES = ["admin", "editor", "viewer"]
 
 
-@users_bp.route("/users")
+@users_bp.route("/vm-manager/users/")
 @login_required
 @role_required("admin")
 def index():
     return render_template("users.html", users=User.all_users(), roles=ROLES)
 
 
-@users_bp.route("/users/invite", methods=["POST"])
+@users_bp.route("/vm-manager/users/invite/", methods=["POST"])
 @login_required
 @role_required("admin")
 def invite():
@@ -49,7 +49,7 @@ def invite():
     return redirect(url_for("users.index"))
 
 
-@users_bp.route("/users/<user_id>/role", methods=["POST"])
+@users_bp.route("/vm-manager/users/<user_id>/role/", methods=["POST"])
 @login_required
 @role_required("admin")
 def update_role(user_id):
@@ -65,7 +65,7 @@ def update_role(user_id):
     return redirect(url_for("users.index"))
 
 
-@users_bp.route("/users/<user_id>/delete", methods=["POST"])
+@users_bp.route("/vm-manager/users/<user_id>/delete/", methods=["POST"])
 @login_required
 @role_required("admin")
 def delete(user_id):

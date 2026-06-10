@@ -6,7 +6,7 @@ from app.models.settings import get_settings, save_settings
 settings_bp = Blueprint("settings", __name__)
 
 
-@settings_bp.route("/settings", methods=["GET"])
+@settings_bp.route("/vm-manager/settings/", methods=["GET"])
 @login_required
 @role_required("admin")
 def index():
@@ -17,7 +17,7 @@ def index():
     return render_template("settings.html", s=s)
 
 
-@settings_bp.route("/settings/save", methods=["POST"])
+@settings_bp.route("/vm-manager/settings/save/", methods=["POST"])
 @login_required
 @role_required("admin")
 def save():
@@ -45,7 +45,7 @@ def save():
     return redirect(url_for("settings.index"))
 
 
-@settings_bp.route("/settings/test-email", methods=["POST"])
+@settings_bp.route("/vm-manager/settings/test-email/", methods=["POST"])
 @login_required
 @role_required("admin")
 def test_email():

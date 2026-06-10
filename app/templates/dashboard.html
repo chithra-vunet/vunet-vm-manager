@@ -93,7 +93,7 @@
           </div>
         </div>
         <div class="col-md-2">
-          <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+          <select name="status" class="form-select form-select-sm">
             <option value="All"      {% if selected_status=='All'      %}selected{% endif %}>All Status</option>
             <option value="Active"   {% if selected_status=='Active'   %}selected{% endif %}>Active</option>
             <option value="Inactive" {% if selected_status=='Inactive' %}selected{% endif %}>Inactive</option>
@@ -149,7 +149,12 @@
             </ul>
           </div>
         </div>
-        <div class="col-md-3 d-flex gap-2">
+        <div class="col-md-3 d-flex gap-2 align-items-end flex-wrap">
+          <select name="per_page" class="form-select form-select-sm" style="width:auto"
+                  onchange="this.form.submit()">
+            <option value="25"  {% if per_page_raw != 'all' %}selected{% endif %}>25 / page</option>
+            <option value="all" {% if per_page_raw == 'all' %}selected{% endif %}>Show All</option>
+          </select>
           <button type="submit" class="btn btn-sm btn-primary">
             <i class="bi bi-funnel me-1"></i>Filter
           </button>
@@ -173,7 +178,11 @@
   <div class="card-body p-0">
     <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom">
       <small class="text-muted">
-        Showing {{ ((page-1)*25)+1 }}–{{ [page*25, total]|min }} of {{ total }} VM{{ 's' if total != 1 }}
+        {% if show_all %}
+          Showing all {{ total }} VM{{ 's' if total != 1 }}
+        {% else %}
+          Showing {{ ((page-1)*25)+1 }}–{{ [page*25, total]|min }} of {{ total }} VM{{ 's' if total != 1 }}
+        {% endif %}
       </small>
       <div class="d-flex align-items-center gap-2 flex-wrap">
         <div class="dropdown">
@@ -333,7 +342,7 @@
       <nav>
         <ul class="pagination pagination-sm mb-0">
           <li class="page-item {% if page == 1 %}disabled{% endif %}">
-            <a class="page-link" href="?{{ request.query_string.decode().replace('page='+page|string, 'page='+(page-1)|string) if 'page=' in request.query_string.decode() else request.query_string.decode()+'&page='+(page-1)|string }}">
+            <a class="page-link" href="{{ url_for('dashboard.index', page=page-1, search=search, status=selected_status, provider=selected_providers, team=selected_teams, per_page=per_page_raw, sort_by=sort_by, sort_dir=sort_dir) }}">
               <i class="bi bi-chevron-left"></i>
             </a>
           </li>
@@ -343,12 +352,12 @@
                 <li class="page-item disabled"><span class="page-link">…</span></li>
               {% endif %}
               <li class="page-item {% if p == page %}active{% endif %}">
-                <a class="page-link" href="{{ url_for('dashboard.index', page=p, search=search, status=selected_status, provider=selected_providers, team=selected_teams) }}">{{ p }}</a>
+                <a class="page-link" href="{{ url_for('dashboard.index', page=p, search=search, status=selected_status, provider=selected_providers, team=selected_teams, per_page=per_page_raw) }}">{{ p }}</a>
               </li>
             {% endif %}
           {% endfor %}
           <li class="page-item {% if page == total_pages %}disabled{% endif %}">
-            <a class="page-link" href="{{ url_for('dashboard.index', page=page+1, search=search, status=selected_status, provider=selected_providers, team=selected_teams) }}">
+            <a class="page-link" href="{{ url_for('dashboard.index', page=page+1, search=search, status=selected_status, provider=selected_providers, team=selected_teams, per_page=per_page_raw, sort_by=sort_by, sort_dir=sort_dir) }}">
               <i class="bi bi-chevron-right"></i>
             </a>
           </li>
@@ -545,9 +554,9 @@
            value="{{ vm.get('vm_name','') }}" placeholder="e.g. prod-web-01">
   </div>
   <div class="col-md-6">
-    <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span></label>
-    <input type="text" name="ip_address" class="form-control" required
-           value="{{ vm.get('ip_address','') }}" placeholder="e.g. 10.0.1.50">
+    <label class="form-label fw-semibold">IP Address</label>
+    <input type="text" name="ip_address" class="form-control"
+           value="{{ vm.get('ip_address','') }}" placeholder="e.g. 10.0.1.50 (leave blank for NA)">
   </div>
   <div class="col-md-6">
     <label class="form-label fw-semibold">Requested By <span class="text-danger">*</span></label>
@@ -631,13 +640,13 @@ function updateDropLabel(checkClass, labelId, singular) {
 function openEditModal(vmId) {
   const form = document.getElementById('editVmForm');
   const body = document.getElementById('editModalBody');
-  form.action = `/vms/${vmId}/edit`;
+  form.action = `/vm-manager/vms/${vmId}/edit`;
   body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
 
   const modal = new bootstrap.Modal(document.getElementById('editVmModal'));
   modal.show();
 
-  fetch(`/vms/${vmId}/json`)
+  fetch(`/vm-manager/vms/${vmId}/json`)
     .then(r => r.json())
     .then(vm => { body.innerHTML = buildFormHTML(vm); })
     .catch(() => { body.innerHTML = '<div class="alert alert-danger">Failed to load VM data.</div>'; });
@@ -669,8 +678,8 @@ function buildFormHTML(vm) {
       <input type="text" name="vm_name" class="form-control" required value="${vm.vm_name||''}">
     </div>
     <div class="col-md-6">
-      <label class="form-label fw-semibold">IP Address <span class="text-danger">*</span></label>
-      <input type="text" name="ip_address" class="form-control" required value="${vm.ip_address||''}">
+      <label class="form-label fw-semibold">IP Address</label>
+      <input type="text" name="ip_address" class="form-control" value="${vm.ip_address||''}">
     </div>
     <div class="col-md-6">
       <label class="form-label fw-semibold">Requested By <span class="text-danger">*</span></label>
@@ -730,7 +739,7 @@ function openDeactivateModal(btn) {
   const vmId       = btn.dataset.vmId;
   const vmName     = btn.dataset.vmName;
   const plannedEnd = btn.dataset.plannedEnd;
-  document.getElementById('deactivateForm').action = `/vms/${vmId}/deactivate`;
+  document.getElementById('deactivateForm').action = `/vm-manager/vms/${vmId}/deactivate`;
   document.getElementById('deactivateName').textContent = vmName;
   const today = new Date().toISOString().split('T')[0];
   // pre-fill with planned_end_date when it's in the past, otherwise today
@@ -741,7 +750,7 @@ function openDeactivateModal(btn) {
 
 // ── Delete Modal ──────────────────────────────────────────────────────────────
 function openDeleteModal(vmId, vmName) {
-  document.getElementById('deleteForm').action = `/vms/${vmId}/delete`;
+  document.getElementById('deleteForm').action = `/vm-manager/vms/${vmId}/delete`;
   document.getElementById('deleteName').textContent = vmName;
   new bootstrap.Modal(document.getElementById('deleteModal')).show();
 }

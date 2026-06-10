@@ -225,10 +225,10 @@
             <label class="form-label fw-semibold">Period</label>
             <select id="teamPeriod" class="form-select" onchange="updateTeamPeriodControls()">
               <option value="current">Current Snapshot</option>
-              <option value="range">Date Range</option>
+              <option value="range" selected>Date Range</option>
             </select>
           </div>
-          <div id="teamDateRange" class="col-md-4" style="display:none">
+          <div id="teamDateRange" class="col-md-4">
             <label class="form-label fw-semibold">From – To</label>
             <div class="d-flex gap-2 align-items-center">
               <input type="date" id="teamStart" class="form-control">
@@ -383,6 +383,72 @@
   </div>
 
 </div>
+
+{# ── Edit VM Modal ────────────────────────────────────────────────────────── #}
+<div class="modal fade" id="editVmModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>Edit VM</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="editVmForm">
+        <div class="modal-body" id="editModalBody"></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Deactivate Modal ─────────────────────────────────────────────────────── #}
+<div class="modal fade" id="deactivateModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning">
+        <h5 class="modal-title">Deactivate VM</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="deactivateForm">
+        <div class="modal-body">
+          <p>Mark <strong id="deactivateName"></strong> as Inactive?</p>
+          <div class="mb-3">
+            <label class="form-label">Deletion / End Date</label>
+            <input type="date" name="deleted_date" id="deactivateDate" class="form-control">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning">Deactivate</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{# ── Delete Modal ─────────────────────────────────────────────────────────── #}
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Delete VM</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" id="deleteForm">
+        <div class="modal-body">
+          <p>Permanently delete <strong id="deleteName"></strong>? This cannot be undone.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">Delete</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 
 
@@ -410,6 +476,86 @@ function onOverdueToggle() {
   loadExpiring();
 }
 
+const _canEdit   = {{ 'true' if current_user.role in ['admin','editor'] else 'false' }};
+const _canDelete = {{ 'true' if current_user.role == 'admin' else 'false' }};
+
+function _reportActionBtns(v, isOverdue) {
+  if (!_canEdit) return '';
+  const edit = `<button class="btn btn-outline-primary btn-sm" title="Edit"
+    onclick="reportEditModal('${v.vm_id}')"><i class="bi bi-pencil"></i></button>`;
+  const deact = `<button class="btn btn-outline-warning btn-sm" title="Deactivate"
+    data-vm-id="${v.vm_id}" data-vm-name="${v.vm_name.replace(/"/g,'&quot;')}"
+    data-planned-end="${v.planned_end_date}"
+    onclick="reportDeactivateModal(this)"><i class="bi bi-pause-circle"></i></button>`;
+  const del = _canDelete
+    ? `<button class="btn btn-outline-danger btn-sm" title="Delete"
+        onclick="reportDeleteModal('${v.vm_id}','${v.vm_name.replace(/'/g,"\\'")}')"><i class="bi bi-trash"></i></button>` : '';
+  return `<div class="btn-group btn-group-sm">${edit}${deact}${del}</div>`;
+}
+
+function reportEditModal(vmId) {
+  const form = document.getElementById('editVmForm');
+  const body = document.getElementById('editModalBody');
+  form.action = `/vm-manager/vms/${vmId}/edit`;
+  body.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary"></div></div>';
+  new bootstrap.Modal(document.getElementById('editVmModal')).show();
+  fetch(`/vm-manager/vms/${vmId}/json`)
+    .then(r => r.json())
+    .then(vm => { body.innerHTML = buildReportFormHTML(vm); })
+    .catch(() => { body.innerHTML = '<div class="alert alert-danger">Failed to load VM data.</div>'; });
+}
+
+function reportDeactivateModal(btn) {
+  document.getElementById('deactivateForm').action = `/vm-manager/vms/${btn.dataset.vmId}/deactivate`;
+  document.getElementById('deactivateName').textContent = btn.dataset.vmName;
+  const today = new Date().toISOString().split('T')[0];
+  const pre   = btn.dataset.plannedEnd && btn.dataset.plannedEnd < today ? btn.dataset.plannedEnd : today;
+  document.getElementById('deactivateDate').value = pre;
+  new bootstrap.Modal(document.getElementById('deactivateModal')).show();
+}
+
+function reportDeleteModal(vmId, vmName) {
+  document.getElementById('deleteForm').action = `/vm-manager/vms/${vmId}/delete`;
+  document.getElementById('deleteName').textContent = vmName;
+  new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+
+function buildReportFormHTML(vm) {
+  const providers = {{ cloud_providers | tojson }};
+  const teams     = {{ all_teams | tojson }};
+  const isActive  = vm.status === 'Active';
+  const provOpts  = providers.map(p => `<option value="${p}" ${vm.cloud_provider===p?'selected':''}>${p}</option>`).join('');
+  const teamOpts  = teams.map(t => `<option value="${t}" ${vm.team_name===t?'selected':''}>${t}</option>`).join('');
+  return `
+  <div class="row g-3">
+    <div class="col-md-6"><label class="form-label fw-semibold">Cloud Provider</label>
+      <select name="cloud_provider" class="form-select" required>${provOpts}</select></div>
+    <div class="col-md-6"><label class="form-label fw-semibold">VM Name</label>
+      <input name="vm_name" class="form-control" value="${vm.vm_name||''}" required></div>
+    <div class="col-md-6"><label class="form-label fw-semibold">IP Address</label>
+      <input name="ip_address" class="form-control" value="${vm.ip_address||''}"></div>
+    <div class="col-md-6"><label class="form-label fw-semibold">Requested By</label>
+      <input name="requested_by" class="form-control" value="${vm.requested_by||''}" required></div>
+    <div class="col-md-6"><label class="form-label fw-semibold">Team</label>
+      <select name="team_name" class="form-select" required>${teamOpts}</select></div>
+    <div class="col-md-6"><label class="form-label fw-semibold">Daily Cost (INR)</label>
+      <input name="daily_cost" type="number" step="0.01" class="form-control" value="${vm.daily_cost||0}" required></div>
+    <div class="col-md-6"><label class="form-label fw-semibold">Start Date</label>
+      <input name="start_date" type="date" class="form-control" value="${vm.start_date||''}"></div>
+    <div class="col-md-6"><label class="form-label fw-semibold">Planned End Date</label>
+      <input name="planned_end_date" type="date" class="form-control" value="${vm.planned_end_date||''}"></div>
+    <div class="col-md-6"><label class="form-label fw-semibold">Status</label>
+      <select name="status" class="form-select">
+        <option value="Active"   ${isActive?'selected':''}>Active</option>
+        <option value="Inactive" ${!isActive?'selected':''}>Inactive</option>
+      </select></div>
+    ${!isActive ? `<div class="col-md-6"><label class="form-label fw-semibold">Deleted Date</label>
+      <input name="deleted_date" type="date" class="form-control" value="${vm.deleted_date||''}"></div>` : ''}
+    <div class="col-12"><label class="form-label fw-semibold">Purpose</label>
+      <input name="purpose" class="form-control" value="${vm.purpose||''}"></div>
+  </div>`;
+}
+
 function loadExpiring() {
   const overdue   = document.getElementById('showOverdue').checked;
   const days      = document.getElementById('expiringDays').value || 30;
@@ -418,7 +564,7 @@ function loadExpiring() {
   const el        = document.getElementById('expiringContent');
   el.innerHTML    = spinner();
 
-  let url = overdue ? '/reports/expiring?overdue=1' : `/reports/expiring?days=${days}`;
+  let url = overdue ? '/vm-manager/reports/expiring?overdue=1' : `/vm-manager/reports/expiring?days=${days}`;
   if (provider) url += `&provider=${encodeURIComponent(provider)}`;
   if (team)     url += `&team=${encodeURIComponent(team)}`;
 
@@ -433,19 +579,24 @@ function loadExpiring() {
         return;
       }
       const colHead = overdue ? 'Days Overdue' : 'Days Left';
+      const actionHead = _canEdit ? '<th class="text-center">Actions</th>' : '';
       let rows = data.map((v, i) => {
         const badge = overdue
           ? `<span class="badge bg-danger">${v.days_overdue} day${v.days_overdue !== 1 ? 's' : ''} overdue</span>`
           : `<span class="badge ${v.days_left <= 3 ? 'bg-danger' : 'bg-warning text-dark'}">${v.days_left} day${v.days_left !== 1 ? 's' : ''}</span>`;
-        return `<tr>
+        const rowClass = overdue ? 'row-overdue' : (v.days_left <= 3 ? 'row-expiring' : '');
+        const actionCell = _canEdit ? `<td class="text-center">${_reportActionBtns(v, overdue)}</td>` : '';
+        return `<tr class="${rowClass}">
           <td>${i+1}</td>
           <td><span class="badge" style="background:${providerColor(v.cloud_provider)}">${v.cloud_provider}</span></td>
           <td class="fw-semibold">${v.vm_name}</td>
+          <td>${v.ip_address || 'NA'}</td>
           <td>${v.team_name}</td>
           <td>${v.requested_by || '—'}</td>
           <td>${fmtDate(v.planned_end_date)}</td>
           <td>${badge}</td>
           <td>₹${v.daily_cost.toFixed(2)}</td>
+          ${actionCell}
         </tr>`;
       }).join('');
 
@@ -455,7 +606,7 @@ function loadExpiring() {
             <div class="table-responsive">
               <table class="table table-hover mb-0">
                 <thead class="table-navy">
-                  <tr><th>#</th><th>Provider</th><th>VM Name</th><th>Team</th><th>Requested By</th><th>End Date</th><th>${colHead}</th><th>Daily Cost</th></tr>
+                  <tr><th>#</th><th>Provider</th><th>VM Name</th><th>IP Address</th><th>Team</th><th>Requested By</th><th>End Date</th><th>${colHead}</th><th>Daily Cost</th>${actionHead}</tr>
                 </thead>
                 <tbody>${rows}</tbody>
               </table>
@@ -469,7 +620,7 @@ function loadExpiring() {
 function exportExpiring() {
   const overdue  = document.getElementById('showOverdue').checked;
   const days     = document.getElementById('expiringDays').value || 30;
-  window.location = overdue ? '/reports/export/expiring?overdue=1' : `/reports/export/expiring?days=${days}`;
+  window.location = overdue ? '/vm-manager/reports/export/expiring?overdue=1' : `/vm-manager/reports/export/expiring?days=${days}`;
 }
 
 // ── TAB 2: Cost by Provider ───────────────────────────────────────────────────
@@ -483,7 +634,7 @@ function loadCost() {
   const el    = document.getElementById('costContent');
   el.innerHTML = spinner();
 
-  let url = '/reports/cost-by-provider';
+  let url = '/vm-manager/reports/cost-by-provider';
   if (start) url += `?start=${start}`;
   if (end)   url += `${start ? '&' : '?'}end=${end}`;
 
@@ -494,20 +645,45 @@ function loadCost() {
         el.innerHTML = '<div class="col-12"><div class="alert alert-info">No active VMs found.</div></div>';
         return;
       }
-      const labels = data.map(d => d.provider);
-      const costs  = data.map(d => d.total_cost);
-      const colors = data.map(d => providerColor(d.provider));
-      const grand  = costs.reduce((a, b) => a + b, 0);
+      const mainData  = data.filter(d => d.provider !== 'Tower');
+      const towerRow  = data.find(d => d.provider === 'Tower');
+      const mainTotal = mainData.reduce((a, d) => a + d.total_cost, 0);
 
-      let rows = data.map((d, i) => `
-        <tr>
+      // Chart: all providers including Tower
+      const allLabels = data.map(d => d.provider);
+      const allCosts  = data.map(d => d.total_cost);
+      const allColors = data.map(d => providerColor(d.provider));
+
+      // Numbered rows: exclude Tower
+      let rows = mainData.map((d, i) => {
+        const pct = mainTotal ? (d.total_cost / mainTotal * 100).toFixed(1) : 0;
+        return `<tr>
           <td>${i+1}</td>
           <td><span class="badge" style="background:${providerColor(d.provider)}">${d.provider}</span></td>
           <td>${d.vm_count}</td>
           <td>₹${d.daily_cost.toFixed(2)}</td>
           <td class="fw-bold">₹${d.total_cost.toFixed(2)}</td>
-          <td><span class="badge bg-secondary">${d.pct}%</span></td>
-        </tr>`).join('');
+          <td><span class="badge bg-secondary">${pct}%</span></td>
+        </tr>`;
+      }).join('');
+
+      // tfoot: Tower row (if exists) + Total row
+      const towerTfoot = towerRow ? `
+        <tr style="background:#f0f0f2">
+          <td class="text-muted">—</td>
+          <td><span class="badge" style="background:${providerColor('Tower')}">Tower</span></td>
+          <td>${towerRow.vm_count}</td>
+          <td>₹${towerRow.daily_cost.toFixed(2)}</td>
+          <td class="fw-bold">₹${towerRow.total_cost.toFixed(2)}</td>
+          <td class="text-muted">—</td>
+        </tr>` : '';
+      const totalLabel = towerRow ? 'Total (excl. Tower)' : 'Total';
+      const totalTfoot = `
+        <tr class="table-secondary">
+          <td colspan="4" class="fw-bold">${totalLabel}</td>
+          <td class="fw-bold">₹${mainTotal.toFixed(2)}</td>
+          <td></td>
+        </tr>`;
 
       el.innerHTML = `
         <div class="col-md-5">
@@ -528,6 +704,7 @@ function loadCost() {
                     <tr><th>#</th><th>Provider</th><th>VM Count</th><th>Daily Cost</th><th>Total Cost</th><th>% of Total</th></tr>
                   </thead>
                   <tbody>${rows}</tbody>
+                  <tfoot>${towerTfoot}${totalTfoot}</tfoot>
                 </table>
               </div>
             </div>
@@ -537,11 +714,21 @@ function loadCost() {
       if (costChart) costChart.destroy();
       costChart = new Chart(document.getElementById('costChart'), {
         type: 'doughnut',
-        data: { labels, datasets: [{ data: costs, backgroundColor: colors, borderWidth: 2 }] },
+        data: { labels: allLabels, datasets: [{ data: allCosts, backgroundColor: allColors, borderWidth: 2 }] },
         options: {
           plugins: {
             legend: { position: 'bottom' },
-            tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.toFixed(2)}` } }
+            tooltip: {
+              callbacks: {
+                label: ctx => {
+                  const d = data[ctx.dataIndex];
+                  return [
+                    ` Total Cost : ₹${d.total_cost.toFixed(2)}`,
+                    ` Daily Rate : ₹${d.daily_cost.toFixed(2)}/day`,
+                  ];
+                }
+              }
+            }
           }
         }
       });
@@ -552,7 +739,7 @@ function loadCost() {
 function exportCost() {
   const start = document.getElementById('costStart').value;
   const end   = document.getElementById('costEnd').value;
-  let url = '/reports/export/cost-by-provider';
+  let url = '/vm-manager/reports/export/cost-by-provider';
   const p = [];
   if (start) p.push(`start=${start}`);
   if (end)   p.push(`end=${end}`);
@@ -568,7 +755,7 @@ function loadCostCompare() {
   const el = document.getElementById('costCmpContent');
   el.innerHTML = spinner();
 
-  fetch(`/reports/cost-compare?month1=${m1}&year1=${y1}&month2=${m2}&year2=${y2}`)
+  fetch(`/vm-manager/reports/cost-compare?month1=${m1}&year1=${y1}&month2=${m2}&year2=${y2}`)
     .then(r => r.json())
     .then(d => {
       if (!d.rows || !d.rows.length) {
@@ -667,13 +854,11 @@ function teamGradientColors(n) {
   });
 }
 
-function _teamQueryParams() {
-  const providers  = Array.from(document.querySelectorAll('.team-provider-check:checked')).map(cb => cb.value);
+function _teamBaseParams() {
   const teamFilter = document.getElementById('teamFilter').value;
   const status     = document.getElementById('teamStatus').value;
   const period     = document.getElementById('teamPeriod').value;
   let params = '?status=' + status;
-  providers.forEach(p => params += `&provider=${encodeURIComponent(p)}`);
   if (teamFilter) params += `&team=${encodeURIComponent(teamFilter)}`;
   if (period === 'range') {
     const start = document.getElementById('teamStart').value;
@@ -684,35 +869,114 @@ function _teamQueryParams() {
   return params;
 }
 
+function _teamQueryParams() {
+  const providers = Array.from(document.querySelectorAll('.team-provider-check:checked')).map(cb => cb.value);
+  let params = _teamBaseParams();
+  providers.forEach(p => params += `&provider=${encodeURIComponent(p)}`);
+  return params;
+}
+
 function loadTeam() {
   const el = document.getElementById('teamContent');
   el.innerHTML = spinner();
 
-  fetch('/reports/usage-by-team' + _teamQueryParams())
-    .then(r => r.json())
-    .then(data => {
-      if (!data.length) {
+  const selectedProviders = Array.from(document.querySelectorAll('.team-provider-check:checked')).map(cb => cb.value);
+  const baseParams        = _teamBaseParams();
+  const includeTower      = selectedProviders.length === 0 || selectedProviders.includes('Tower');
+
+  let mainFetch;
+  if (selectedProviders.length === 0) {
+    mainFetch = fetch('/vm-manager/reports/usage-by-team' + baseParams + '&exclude_provider=Tower').then(r => r.json());
+  } else {
+    const mainProviders = selectedProviders.filter(p => p !== 'Tower');
+    if (mainProviders.length > 0) {
+      let mp = baseParams;
+      mainProviders.forEach(p => mp += `&provider=${encodeURIComponent(p)}`);
+      mainFetch = fetch('/vm-manager/reports/usage-by-team' + mp).then(r => r.json());
+    } else {
+      mainFetch = Promise.resolve([]);
+    }
+  }
+  const towerFetch = includeTower
+    ? fetch('/vm-manager/reports/usage-by-team' + baseParams + '&provider=Tower').then(r => r.json())
+    : Promise.resolve([]);
+
+  Promise.all([mainFetch, towerFetch])
+    .then(([data, towerData]) => {
+      if (!data.length && !towerData.length) {
         el.innerHTML = '<div class="col-12"><div class="alert alert-info">No data found.</div></div>';
         return;
       }
-      const labels = data.map(d => d.team);
-      const costs  = data.map(d => d.total_daily_cost);
-      const colors = teamGradientColors(labels.length);
-
-      let rows = data.map((d, i) => `
-        <tr>
+      const hasTotal  = data.some(d => d.total_cost !== null);
+      const labels    = data.map(d => d.team);
+      const costs     = hasTotal ? data.map(d => d.total_cost || 0) : data.map(d => d.total_daily_cost);
+      const colors    = teamGradientColors(labels.length);
+      const mainTotal = costs.reduce((a, b) => a + b, 0);
+      let rows = data.map((d, i) => {
+        const rowVal = hasTotal ? (d.total_cost || 0) : d.total_daily_cost;
+        const pct    = mainTotal ? (rowVal / mainTotal * 100).toFixed(1) : 0;
+        const tcVal  = d.total_cost !== null ? `₹${d.total_cost.toFixed(2)}` : '<span class="text-muted">—</span>';
+        return `<tr>
           <td>${i+1}</td>
           <td class="fw-semibold">${d.team}</td>
           <td>${d.vm_count}</td>
           <td>₹${d.total_daily_cost.toFixed(2)}</td>
-          <td>₹${d.avg_daily_cost.toFixed(2)}</td>
-          <td><span class="badge bg-secondary">${d.pct}%</span></td>
-        </tr>`).join('');
+          <td class="fw-bold">${tcVal}</td>
+          <td><span class="badge bg-secondary">${pct}%</span></td>
+        </tr>`;
+      }).join('');
+
+      const mainDailyTotal = data.reduce((a, d) => a + d.total_daily_cost, 0);
+      const mainTotalCost  = hasTotal ? data.reduce((a, d) => a + (d.total_cost || 0), 0) : null;
+      const tcFootMain     = mainTotalCost !== null ? `<td class="fw-bold">₹${mainTotalCost.toFixed(2)}</td>` : '<td class="text-muted">—</td>';
+
+      let towerSection = '';
+      if (towerData.length > 0) {
+        const towerTotal     = towerData.reduce((a, d) => a + d.total_daily_cost, 0);
+        const towerHasTotal  = towerData.some(d => d.total_cost !== null);
+        const towerTotalCost = towerHasTotal ? towerData.reduce((a, d) => a + (d.total_cost || 0), 0) : null;
+        const towerRows = towerData.map((d, i) => {
+          const tcVal = d.total_cost !== null ? `₹${d.total_cost.toFixed(2)}` : '<span class="text-muted">—</span>';
+          return `<tr>
+            <td>${i+1}</td>
+            <td class="fw-semibold">${d.team}</td>
+            <td>${d.vm_count}</td>
+            <td>₹${d.total_daily_cost.toFixed(2)}</td>
+            <td class="fw-bold">${tcVal}</td>
+          </tr>`;
+        }).join('');
+        const tcFootTower = towerTotalCost !== null ? `<td class="fw-bold">₹${towerTotalCost.toFixed(2)}</td>` : '<td class="text-muted">—</td>';
+        towerSection = `
+          <div class="col-12">
+            <div class="card shadow-sm" style="border-left:4px solid #212529">
+              <div class="card-header fw-semibold" style="background:#f5f5f5">
+                <span class="badge me-1" style="background:${providerColor('Tower')}">Tower</span>Tower Provider — Usage by Team
+              </div>
+              <div class="card-body p-0">
+                <div class="table-responsive">
+                  <table class="table table-hover table-sm mb-0">
+                    <thead class="table-secondary">
+                      <tr><th>#</th><th>Team</th><th>VM Count</th><th>Total Daily Cost</th><th>Total Cost</th></tr>
+                    </thead>
+                    <tbody>${towerRows}</tbody>
+                    <tfoot>
+                      <tr class="table-secondary">
+                        <td colspan="3" class="fw-bold">Tower Total</td>
+                        <td class="fw-bold">₹${towerTotal.toFixed(2)}</td>
+                        ${tcFootTower}
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>`;
+      }
 
       el.innerHTML = `
         <div class="col-md-5">
           <div class="card shadow-sm h-100">
-            <div class="card-header fw-semibold">Daily Cost by Team</div>
+            <div class="card-header fw-semibold">${hasTotal ? 'Total Cost by Team (excl. Tower)' : 'Daily Cost by Team (excl. Tower)'}</div>
             <div class="card-body">
               <canvas id="teamChart"></canvas>
             </div>
@@ -725,38 +989,51 @@ function loadTeam() {
               <div class="table-responsive">
                 <table class="table table-hover mb-0">
                   <thead class="table-navy">
-                    <tr><th>#</th><th>Team</th><th>VM Count</th><th>Total Daily Cost</th><th>Avg Daily Cost</th><th>% of Total</th></tr>
+                    <tr><th>#</th><th>Team</th><th>VM Count</th><th>Total Daily Cost</th><th>Total Cost</th><th>% of Total</th></tr>
                   </thead>
                   <tbody>${rows}</tbody>
+                  <tfoot>
+                    <tr class="table-secondary">
+                      <td colspan="3" class="fw-bold">Total (excl. Tower)</td>
+                      <td class="fw-bold">₹${mainDailyTotal.toFixed(2)}</td>
+                      ${tcFootMain}
+                      <td></td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>
           </div>
-        </div>`;
+        </div>
+        ${towerSection}`;
 
       if (teamChart) teamChart.destroy();
-      teamChart = new Chart(document.getElementById('teamChart'), {
-        type: 'bar',
-        data: { labels, datasets: [{ label: 'Daily Cost (INR)', data: costs, backgroundColor: colors, borderRadius: 6 }] },
-        options: {
-          indexAxis: 'y',
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.x.toFixed(2)}/day` } }
-          },
-          scales: { x: { ticks: { callback: v => '₹' + v } } }
-        }
-      });
+      if (data.length > 0) {
+        const chartLabel   = hasTotal ? 'Total Cost (INR)' : 'Daily Cost (INR)';
+        const tooltipSuffix = hasTotal ? '' : '/day';
+        teamChart = new Chart(document.getElementById('teamChart'), {
+          type: 'bar',
+          data: { labels, datasets: [{ label: chartLabel, data: costs, backgroundColor: colors, borderRadius: 6 }] },
+          options: {
+            indexAxis: 'y',
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: ctx => ` ₹${ctx.parsed.x.toFixed(2)}${tooltipSuffix}` } }
+            },
+            scales: { x: { ticks: { callback: v => '₹' + v } } }
+          }
+        });
+      }
     })
     .catch(() => { el.innerHTML = '<div class="col-12"><div class="alert alert-danger">Failed to load data.</div></div>'; });
 }
 
 function exportTeam() {
-  window.location = '/reports/export/usage-by-team' + _teamQueryParams();
+  window.location = '/vm-manager/reports/export/usage-by-team' + _teamQueryParams();
 }
 
 function exportConsolidated() {
-  window.location = '/reports/export/cloud-team-consolidated' + _teamQueryParams();
+  window.location = '/vm-manager/reports/export/cloud-team-consolidated' + _teamQueryParams();
 }
 
 // ── TAB 4: Trends ─────────────────────────────────────────────────────────────
@@ -780,7 +1057,7 @@ function setTrendMonths(n) {
 
 function loadTrends() {
   const mode = document.getElementById('trendsMode').value;
-  let url = '/reports/trends?mode=' + mode;
+  let url = '/vm-manager/reports/trends?mode=' + mode;
   if (mode === 'monthly') {
     url += '&months=' + (document.getElementById('trendsMonths').value || 12);
   } else if (mode === 'specific') {
@@ -870,7 +1147,7 @@ function loadTrendsComparison() {
   const cmpCost  = document.getElementById('trendCmpCostChart');
   if (!cmpCount || !cmpCost) return;
 
-  fetch(`/reports/trends/compare?year=${cmpYear}&month=${cmpMonth}`)
+  fetch(`/vm-manager/reports/trends/compare?year=${cmpYear}&month=${cmpMonth}`)
     .then(r => r.json())
     .then(cmp => {
       if (trendCmpCountChart) { trendCmpCountChart.destroy(); trendCmpCountChart = null; }
@@ -921,7 +1198,7 @@ function loadTopExpensive() {
   const el     = document.getElementById('topContent');
   el.innerHTML = spinner();
 
-  fetch(`/reports/top-expensive?n=${n}&status=${status}`)
+  fetch(`/vm-manager/reports/top-expensive?n=${n}&status=${status}`)
     .then(r => r.json())
     .then(data => {
       if (!data.length) {
@@ -941,7 +1218,6 @@ function loadTopExpensive() {
           <td class="fw-bold text-danger">₹${d.daily_cost.toFixed(2)}</td>
           <td class="fw-semibold">₹${d.monthly_est.toFixed(2)}</td>
           <td class="small text-muted">${fmtDate(d.planned_end_date)}</td>
-          <td>${(d.tags||[]).map(t => `<span class="badge tag-${t}">${t}</span>`).join(' ')}</td>
         </tr>`).join('');
 
       el.innerHTML = `
@@ -958,7 +1234,7 @@ function loadTopExpensive() {
               <div class="table-responsive">
                 <table class="table table-hover mb-0">
                   <thead class="table-navy">
-                    <tr><th>#</th><th>VM Name</th><th>Provider</th><th>Team</th><th>Daily Cost</th><th>Monthly Est.</th><th>End Date</th><th>Tags</th></tr>
+                    <tr><th>#</th><th>VM Name</th><th>Provider</th><th>Team</th><th>Daily Cost</th><th>Monthly Est.</th><th>End Date</th></tr>
                   </thead>
                   <tbody>${rows}</tbody>
                 </table>
@@ -999,7 +1275,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('trendsMonth').value       = now.getMonth() + 1;
   document.getElementById('trendsCustomStart').value = `${y}-01-01`;
   document.getElementById('trendsCustomEnd').value   = `${y}-${m}-${d}`;
-  document.getElementById('teamStart').value         = `${y}-01-01`;
+  document.getElementById('teamStart').value         = `${y}-${m}-01`;
   document.getElementById('teamEnd').value           = `${y}-${m}-${d}`;
   document.getElementById('cmpYear').value           = y;
   document.getElementById('cmpMonth').value          = now.getMonth() + 1;
